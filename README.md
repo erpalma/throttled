@@ -9,7 +9,7 @@ The python module `python-periphery` is used for accessing the MCHBAR register b
 ## Installation
 ```
 git clone https://github.com/erpalma/lenovo-throttling-fix.git
-sudo pip install python-periphery
+sudo -H pip install python-periphery
 sudo make install
 sudo systemctl enable lenovo_fix.service
 sudo systemctl start lenovo_fix.service
