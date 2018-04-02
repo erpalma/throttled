@@ -1,0 +1,9 @@
+[Unit]
+Description=Fix Lenovo T480/T480s/X1C6 throttling on Linux
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/lenovo_fix.py
+
+[Install]
+WantedBy=multi-user.target
