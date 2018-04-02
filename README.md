@@ -1,4 +1,4 @@
-# lenovo-throttling-fix
+# Fix T480 / T480s / X1C6 Throttling on Linux
 Workaround for Linux throttling issues on Lenovo T480 / T480s / X1C6 notebooks as described [here](https://www.reddit.com/r/thinkpad/comments/870u0a/t480s_linux_throttling_bug/).
 
 This script forces the CPU package power limit (PL1/2) to **44 W** (29 W on battery) and the temperature trip point to **97 'C** (85 'C on battery) by overriding default values in MSR and MCHBAR every 5 seconds (30 on battery) to block the Embedded Controller from resetting these values to default.
@@ -39,4 +39,4 @@ config = {
 ```
 
 ## Disclaimer
-This script overrides the default values set by Lenovo. I'm using it without any problem, but it is still experimental so use it at your own risk.
+This script overrides the default values set by Lenovo. I'm using it without any problem, but it is still experimental so use it at your own risk. This script can be probably adapter/used on other notebooks too.
