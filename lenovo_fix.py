@@ -12,16 +12,16 @@ config = {
         'UPDATE_RATE_SEC': 5,  # Update the registers every this many seconds
         'PL1_TDP_W': 44,  # Max package power for time window #1
         'PL1_DURATION_S': 28,  # Time window #1 duration
-        'PL2_TDP_W': 44,  # Max package power for time window #1
-        'PL2_DURATION_S': 0.002,  # Time window #1 duration
+        'PL2_TDP_W': 44,  # Max package power for time window #2
+        'PL2_DURATION_S': 0.002,  # Time window #2 duration
         'TRIP_TEMP_C': 97  # Max allowed temperature before throttling
     },
     'BATTERY': {
         'UPDATE_RATE_SEC': 30,  # Update the registers every this many seconds
         'PL1_TDP_W': 29,  # Max package power for time window #1
         'PL1_DURATION_S': 28,  # Time window #1 duration
-        'PL2_TDP_W': 44,  # Max package power for time window #1
-        'PL2_DURATION_S': 0.002,  # Time window #1 duration
+        'PL2_TDP_W': 44,  # Max package power for time window #2
+        'PL2_DURATION_S': 0.002,  # Time window #2 duration
         'TRIP_TEMP_C': 85  # Max allowed temperature before throttling
     },
 }
