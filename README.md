@@ -16,27 +16,7 @@ sudo systemctl start lenovo_fix.service
 ```
 
 ## Configuration
-The script can be configured by editing `lenovo_fix.py` directly. There exist two profiles `AC` and `BATTERY`:
-```
-config = {
-    'AC': {
-        'UPDATE_RATE_SEC': 5,  # Update the registers every this many seconds
-        'PL1_TDP_W': 44,  # Max package power for time window #1
-        'PL1_DURATION_S': 28,  # Time window #1 duration
-        'PL2_TDP_W': 44,  # Max package power for time window #2
-        'PL2_DURATION_S': 0.002,  # Time window #2 duration
-        'TRIP_TEMP_C': 97  # Max allowed temperature before throttling
-    },
-    'BATTERY': {
-        'UPDATE_RATE_SEC': 30,  # Update the registers every this many seconds
-        'PL1_TDP_W': 29,  # Max package power for time window #1
-        'PL1_DURATION_S': 28,  # Time window #1 duration
-        'PL2_TDP_W': 44,  # Max package power for time window #2
-        'PL2_DURATION_S': 0.002,  # Time window #2 duration
-        'TRIP_TEMP_C': 85  # Max allowed temperature before throttling
-    },
-}
-```
+The configuration has moved to `/etc/lenovo_fix.conf`. Makefile does not overwrite your previous config file, so you need to manually check for differences in config file structure when updating the tool. If you want to overwrite the config with new defaults just issue `sudo cp etc/lenovo_fix.conf /etc`. There exist two profiles `AC` and `BATTERY` and the script can be totally disabled by setting `Enabled: False` in the `GENERAL` section. All fields accept floating point values as well as integers.
 
 ## Disclaimer
 This script overrides the default values set by Lenovo. I'm using it without any problem, but it is still experimental so use it at your own risk. This script can be probably adapted/used on other notebooks too.
