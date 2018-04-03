@@ -1,30 +1,16 @@
 #!/usr/bin/env python2
 
+import ConfigParser
 import glob
 import os
 import struct
 
+from collections import defaultdict
 from periphery import MMIO
 from time import sleep
 
-config = {
-    'AC': {
-        'UPDATE_RATE_SEC': 5,  # Update the registers every this many seconds
-        'PL1_TDP_W': 44,  # Max package power for time window #1
-        'PL1_DURATION_S': 28,  # Time window #1 duration
-        'PL2_TDP_W': 44,  # Max package power for time window #2
-        'PL2_DURATION_S': 0.002,  # Time window #2 duration
-        'TRIP_TEMP_C': 97  # Max allowed temperature before throttling
-    },
-    'BATTERY': {
-        'UPDATE_RATE_SEC': 30,  # Update the registers every this many seconds
-        'PL1_TDP_W': 29,  # Max package power for time window #1
-        'PL1_DURATION_S': 28,  # Time window #1 duration
-        'PL2_TDP_W': 44,  # Max package power for time window #2
-        'PL2_DURATION_S': 0.002,  # Time window #2 duration
-        'TRIP_TEMP_C': 85  # Max allowed temperature before throttling
-    },
-}
+SYSFS_POWER_PATH = '/sys/class/power_supply/AC/online'
+CONFIG_PATH = '/etc/lenovo_fix.conf'
 
 
 def writemsr(msr, val):
@@ -39,7 +25,7 @@ def writemsr(msr, val):
 
 
 def is_on_battery():
-    with open('/sys/class/power_supply/AC/online') as f:
+    with open(SYSFS_POWER_PATH) as f:
         return not bool(int(f.read()))
 
 
@@ -51,52 +37,64 @@ def calc_time_window_vars(t):
     raise Exception('Unable to find a good combination!')
 
 
-def check_config():
-    for k in config:
-        assert 0 < config[k]['UPDATE_RATE_SEC']
-        assert 0 < config[k]['PL1_TDP_W']
-        assert 0 < config[k]['PL2_TDP_W']
-        assert 0 < config[k]['PL1_DURATION_S']
-        assert 0 < config[k]['PL2_DURATION_S']
-        assert 40 < config[k]['TRIP_TEMP_C'] < 98
+def load_config():
+    config = ConfigParser.ConfigParser()
+    config.read(CONFIG_PATH)
+
+    for power_source in ('AC', 'BATTERY'):
+        assert 0 < config.getfloat(power_source, 'Update_Rate_s')
+        assert 0 < config.getfloat(power_source, 'PL1_Tdp_W')
+        assert 0 < config.getfloat(power_source, 'PL1_Duration_s')
+        assert 0 < config.getfloat(power_source, 'PL2_Tdp_W')
+        assert 0 < config.getfloat(power_source, 'PL2_Duration_S')
+        assert 40 < config.getfloat(power_source, 'Trip_Temp_C') < 98
+
+    return config
 
 
-def calc_reg_values():
-    for k in config:
+def calc_reg_values(config):
+    regs = defaultdict(dict)
+    for power_source in ('AC', 'BATTERY'):
         # the critical temperature for this CPU is 100 C
-        trip_offset = int(round(100 - config[k]['TRIP_TEMP_C']))
-        config[k]['MSR_TEMPERATURE_TARGET'] = trip_offset << 24
+        trip_offset = int(round(100 - config.getfloat(power_source, 'Trip_Temp_C')))
+        regs[power_source]['MSR_TEMPERATURE_TARGET'] = trip_offset << 24
 
         # 0.125 is the power unit of this CPU
-        PL1 = int(round(config[k]['PL1_TDP_W'] / 0.125))
-        Y, Z = calc_time_window_vars(config[k]['PL1_DURATION_S'])
+        PL1 = int(round(config.getfloat(power_source, 'PL1_Tdp_W') / 0.125))
+        Y, Z = calc_time_window_vars(config.getfloat(power_source, 'PL1_Duration_s'))
         TW1 = Y | (Z << 5)
 
-        PL2 = int(round(config[k]['PL2_TDP_W'] / 0.125))
-        Y, Z = calc_time_window_vars(config[k]['PL2_DURATION_S'])
+        PL2 = int(round(config.getfloat(power_source, 'PL2_Tdp_W') / 0.125))
+        Y, Z = calc_time_window_vars(config.getfloat(power_source, 'PL2_Duration_s'))
         TW2 = Y | (Z << 5)
 
-        config[k]['MSR_PKG_POWER_LIMIT'] = PL1 | (1 << 15) | (TW1 << 17) | (PL2 << 32) | (1 << 47) | (TW2 << 49)
+        regs[power_source]['MSR_PKG_POWER_LIMIT'] = PL1 | (1 << 15) | (TW1 << 17) | (PL2 << 32) | (1 << 47) | (
+            TW2 << 49)
+
+    return regs
 
 
 def main():
-    check_config()
-    calc_reg_values()
+    config = load_config()
+    regs = calc_reg_values(config)
+
+    if not config.getboolean('GENERAL', 'Enabled'):
+        return
 
     mchbar_mmio = MMIO(0xfed159a0, 8)
     while True:
-        cur_config = config['BATTERY' if is_on_battery() else 'AC']
+        power_source = 'BATTERY' if is_on_battery() else 'AC'
 
         # set temperature trip point
-        writemsr(0x1a2, cur_config['MSR_TEMPERATURE_TARGET'])
+        writemsr(0x1a2, regs[power_source]['MSR_TEMPERATURE_TARGET'])
 
         # set PL1/2 on MSR
-        writemsr(0x610, cur_config['MSR_PKG_POWER_LIMIT'])
+        writemsr(0x610, regs[power_source]['MSR_PKG_POWER_LIMIT'])
         # set MCHBAR register to the same PL1/2 values
-        mchbar_mmio.write32(0, cur_config['MSR_PKG_POWER_LIMIT'] & 0xffffffff)
-        mchbar_mmio.write32(4, cur_config['MSR_PKG_POWER_LIMIT'] >> 32)
+        mchbar_mmio.write32(0, regs[power_source]['MSR_PKG_POWER_LIMIT'] & 0xffffffff)
+        mchbar_mmio.write32(4, regs[power_source]['MSR_PKG_POWER_LIMIT'] >> 32)
 
-        sleep(cur_config['UPDATE_RATE_SEC'])
+        sleep(config.getfloat(power_source, 'Update_Rate_s'))
 
 
 if __name__ == '__main__':
