@@ -39,4 +39,4 @@ config = {
 ```
 
 ## Disclaimer
-This script overrides the default values set by Lenovo. I'm using it without any problem, but it is still experimental so use it at your own risk. This script can be probably adapter/used on other notebooks too.
+This script overrides the default values set by Lenovo. I'm using it without any problem, but it is still experimental so use it at your own risk. This script can be probably adapted/used on other notebooks too.
