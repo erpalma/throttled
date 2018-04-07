@@ -4,6 +4,7 @@ import ConfigParser
 import glob
 import os
 import struct
+import subprocess
 
 from collections import defaultdict
 from periphery import MMIO
@@ -21,7 +22,10 @@ def writemsr(msr, val):
         os.write(f, struct.pack('Q', val))
         os.close(f)
     if not n:
-        raise OSError("msr module not loaded (run modprobe msr)")
+        try:
+            subprocess.check_call(('modprobe', 'msr'))
+        except subprocess.CalledProcessError:
+            raise OSError("Unable to load msr module.")
 
 
 def is_on_battery():
