@@ -22,5 +22,20 @@ sudo systemctl start lenovo_fix.service
 The configuration has moved to `/etc/lenovo_fix.conf`. Makefile does not overwrite your previous config file, so you need to manually check for differences in config file structure when updating the tool. If you want to overwrite the config with new defaults just issue `sudo cp etc/lenovo_fix.conf /etc`. There exist two profiles `AC` and `BATTERY` and the script can be totally disabled by setting `Enabled: False` in the `GENERAL` section. Undervolt is applied if any voltage plane in the config file (section UNDERVOLT) was set. Notice that the offset is in *mV* and only undervolting (*i.e.* negative values) is supported.  
 All fields accept floating point values as well as integers. 
 
+My T480s with i7-8550u is stable with:
+```
+[UNDERVOLT]
+# CPU core voltage offset (mV)
+CORE: -110
+# Integrated GPU voltage offset (mV)
+GPU: -90
+# CPU cache voltage offset (mV)
+CACHE: -110
+# System Agent voltage offset (mV)
+UNCORE: -90
+# Analog I/O voltage offset (mV)
+ANALOGIO: 0
+```
+
 ## Disclaimer
 This script overrides the default values set by Lenovo. I'm using it without any problem, but it is still experimental so use it at your own risk. This script can be probably adapted/used on other notebooks too.
