@@ -1,17 +1,32 @@
 #!/usr/bin/env python2
 
 import ConfigParser
+import dbus
 import glob
 import os
 import struct
 import subprocess
 
 from collections import defaultdict
+from dbus.mainloop.glib import DBusGMainLoop
 from periphery import MMIO
-from time import sleep
+from threading import Event, Thread
+
+try:
+    from gi.repository import GObject
+except ImportError:
+    import gobject as GObject
 
 SYSFS_POWER_PATH = '/sys/class/power_supply/AC/online'
 CONFIG_PATH = '/etc/lenovo_fix.conf'
+
+VOLTAGE_PLANES = {
+    'CORE': 0,
+    'GPU': 1,
+    'CACHE': 2,
+    'UNCORE': 3,
+    'ANALOGIO': 4,
+}
 
 
 def writemsr(msr, val):
@@ -41,6 +56,19 @@ def calc_time_window_vars(t):
     raise Exception('Unable to find a good combination!')
 
 
+def undervolt(config):
+    for plane in VOLTAGE_PLANES:
+        writemsr(0x150, calc_undervolt_msr(plane, config.getfloat('UNDERVOLT', plane)))
+
+
+def calc_undervolt_msr(plane, offset):
+    assert offset <= 0
+    assert plane in VOLTAGE_PLANES
+    offset = int(round(offset * 1.024))
+    offset = 0xFFE00000 & ((offset & 0xFFF) << 21)
+    return 0x8000001100000000 | (VOLTAGE_PLANES[plane] << 40) | offset
+
+
 def load_config():
     config = ConfigParser.ConfigParser()
     config.read(CONFIG_PATH)
@@ -52,6 +80,9 @@ def load_config():
         assert 0 < config.getfloat(power_source, 'PL2_Tdp_W')
         assert 0 < config.getfloat(power_source, 'PL2_Duration_S')
         assert 40 < config.getfloat(power_source, 'Trip_Temp_C') < 98
+
+    for plane in VOLTAGE_PLANES:
+        assert config.getfloat('UNDERVOLT', plane) <= 0
 
     return config
 
@@ -78,15 +109,10 @@ def calc_reg_values(config):
     return regs
 
 
-def main():
-    config = load_config()
-    regs = calc_reg_values(config)
-
-    if not config.getboolean('GENERAL', 'Enabled'):
-        return
-
+def power_thread(config, regs, exit_event):
     mchbar_mmio = MMIO(0xfed159a0, 8)
-    while True:
+
+    while not exit_event.is_set():
         power_source = 'BATTERY' if is_on_battery() else 'AC'
 
         # set temperature trip point
@@ -98,7 +124,45 @@ def main():
         mchbar_mmio.write32(0, regs[power_source]['MSR_PKG_POWER_LIMIT'] & 0xffffffff)
         mchbar_mmio.write32(4, regs[power_source]['MSR_PKG_POWER_LIMIT'] >> 32)
 
-        sleep(config.getfloat(power_source, 'Update_Rate_s'))
+        exit_event.wait(config.getfloat(power_source, 'Update_Rate_s'))
+
+
+def main():
+    config = load_config()
+    regs = calc_reg_values(config)
+
+    if not config.getboolean('GENERAL', 'Enabled'):
+        return
+
+    exit_event = Event()
+    t = Thread(target=power_thread, args=(config, regs, exit_event))
+    t.start()
+
+    undervolt(config)
+
+    # handle dbus events for applying undervolt on resume from sleep/hybernate
+    def handle_sleep_callback(sleeping):
+        if not sleeping:
+            undervolt(config)
+
+    DBusGMainLoop(set_as_default=True)
+    bus = dbus.SystemBus()
+
+    # add dbus receiver only if undervolt is enabled in config
+    if any(config.getfloat('UNDERVOLT', plane) != 0 for plane in VOLTAGE_PLANES):
+        bus.add_signal_receiver(handle_sleep_callback, 'PrepareForSleep', 'org.freedesktop.login1.Manager',
+                                'org.freedesktop.login1')
+
+    try:
+        GObject.threads_init()
+        loop = GObject.MainLoop()
+        loop.run()
+    except (KeyboardInterrupt, SystemExit):
+        pass
+
+    exit_event.set()
+    loop.quit()
+    t.join()
 
 
 if __name__ == '__main__':
