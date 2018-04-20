@@ -1,6 +1,6 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python3
 
-import ConfigParser
+import configparser
 import dbus
 import glob
 import os
@@ -49,8 +49,8 @@ def is_on_battery():
 
 
 def calc_time_window_vars(t):
-    for Y in xrange(2**5):
-        for Z in xrange(2**2):
+    for Y in range(2**5):
+        for Z in range(2**2):
             if t <= (2**Y) * (1. + Z / 4.) * 0.000977:
                 return (Y, Z)
     raise Exception('Unable to find a good combination!')
@@ -70,7 +70,7 @@ def calc_undervolt_msr(plane, offset):
 
 
 def load_config():
-    config = ConfigParser.ConfigParser()
+    config = configparser.ConfigParser()
     config.read(CONFIG_PATH)
 
     for power_source in ('AC', 'BATTERY'):

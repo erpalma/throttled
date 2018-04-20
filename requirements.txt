@@ -1,0 +1,4 @@
+configparser==3.5.0
+dbus-python==1.2.4
+PyGObject==3.28.2
+python-periphery==1.1.1

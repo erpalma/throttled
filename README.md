@@ -4,7 +4,7 @@ Workaround for Linux throttling issues on Lenovo T480 / T480s / X1C6 notebooks a
 This script forces the CPU package power limit (PL1/2) to **44 W** (29 W on battery) and the temperature trip point to **97 'C** (85 'C on battery) by overriding default values in MSR and MCHBAR every 5 seconds (30 on battery) to block the Embedded Controller from resetting these values to default.
 
 ## Requirements
-The python module `python-periphery` is used for accessing the MCHBAR register by memory mapped I/O. 
+The python module `python-periphery` is used for accessing the MCHBAR register by memory mapped I/O.
 
 ## Installation
 ```
