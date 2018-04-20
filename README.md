@@ -9,14 +9,14 @@ The script now also supports **undervolting** the CPU by configuring voltage off
 ## Requirements
 The python module `python-periphery` is used for accessing the MCHBAR register by memory mapped I/O. You also need `dbus` and `gobject` python bindings for listening to dbus signals on resume from sleep/hibernate.
 
+### Update:
+The scripts is now running with Python3 by default (tested w/ 3.6) and a virtualenv is automatically created in `/opt/lenovo_fix`. Python2 should probably still work.
+
 ## Installation
 ```
 git clone https://github.com/erpalma/lenovo-throttling-fix.git
-sudo -H pip install python-periphery
-sudo apt install python-dbus python-gobject
-sudo make install
-sudo systemctl enable lenovo_fix.service
-sudo systemctl start lenovo_fix.service
+sudo apt install virtualenv
+sudo ./install.sh
 ```
 
 ## Configuration
