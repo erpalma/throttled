@@ -14,7 +14,7 @@ The scripts is now running with Python3 by default (tested w/ 3.6) and a virtual
 
 ## Installation
 ```
-sudo apt install git virtualenv build-essential python3-dev libdbus-glib-1-dev libgirepository1.0-dev
+sudo apt install git virtualenv build-essential python3-dev libdbus-glib-1-dev libgirepository1.0-dev libcairo2-dev
 git clone https://github.com/erpalma/lenovo-throttling-fix.git
 sudo ./install.sh
 ```
