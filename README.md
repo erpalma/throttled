@@ -3,11 +3,14 @@ Workaround for Linux throttling issues on Lenovo T480 / T480s / X1C6 notebooks a
 
 This script forces the CPU package power limit (PL1/2) to **44 W** (29 W on battery) and the temperature trip point to **97 'C** (85 'C on battery) by overriding default values in MSR and MCHBAR every 5 seconds (30 on battery) to block the Embedded Controller from resetting these values to default.
 
-### Undervolt
+### Undervolt:
 The script now also supports **undervolting** the CPU by configuring voltage offsets for CPU, cache, GPU, System Agent and Analog I/O planes. The script will re-apply undervolt on resume from standby and hibernate by listening to DBus signals.
 
 ## Requirements
 The python module `python-periphery` is used for accessing the MCHBAR register by memory mapped I/O. You also need `dbus` and `gobject` python bindings for listening to dbus signals on resume from sleep/hibernate.
+
+### Secure Boot:
+Right now it is mandatory to **disable Secure Boot** (in BIOS) in order to avoid [Kernel Lockdown](https://lwn.net/Articles/706637/). In particular Lockdown restricts access to MSR and PCI BAR (via /dev/mem) which are required by this script.
 
 ### Update:
 The scripts is now running with Python3 by default (tested w/ 3.6) and a virtualenv is automatically created in `/opt/lenovo_fix`. Python2 should probably still work.
