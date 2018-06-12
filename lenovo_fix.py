@@ -4,11 +4,13 @@ import configparser
 import dbus
 import glob
 import os
+import psutil
 import struct
 import subprocess
 
 from collections import defaultdict
 from dbus.mainloop.glib import DBusGMainLoop
+from multiprocessing import cpu_count
 from periphery import MMIO
 from threading import Event, Thread
 
@@ -109,6 +111,15 @@ def calc_reg_values(config):
     return regs
 
 
+def set_hwp(pref):
+    # set HWP energy performance hints
+    assert pref in ('performance', 'balance_performance', 'default', 'balance_power', 'power')
+    n = glob.glob('/sys/devices/system/cpu/cpu[0-9]*/cpufreq/energy_performance_preference')
+    for c in n:
+        with open(c, 'wb') as f:
+            f.write(pref.encode())
+
+
 def power_thread(config, regs, exit_event):
     mchbar_mmio = MMIO(0xfed159a0, 8)
 
@@ -124,7 +135,15 @@ def power_thread(config, regs, exit_event):
         mchbar_mmio.write32(0, regs[power_source]['MSR_PKG_POWER_LIMIT'] & 0xffffffff)
         mchbar_mmio.write32(4, regs[power_source]['MSR_PKG_POWER_LIMIT'] >> 32)
 
-        exit_event.wait(config.getfloat(power_source, 'Update_Rate_s'))
+        wait_t = config.getfloat(power_source, 'Update_Rate_s')
+        enable_hwp_mode = config.getboolean('AC', 'HWP_Mode', fallback=False)
+        if power_source == 'AC' and enable_hwp_mode:
+            cpu_usage = float(psutil.cpu_percent(interval=wait_t))
+            # set the full performance mode only when load is greater than this threshold (~ at least 1 core full speed)
+            performance_mode = cpu_usage > 100. / (cpu_count() * 1.25)
+            set_hwp('performance' if performance_mode else 'balance_performance')
+        else:
+            exit_event.wait(wait_t)
 
 
 def main():
@@ -136,6 +155,7 @@ def main():
 
     exit_event = Event()
     t = Thread(target=power_thread, args=(config, regs, exit_event))
+    t.daemon = True
     t.start()
 
     undervolt(config)
@@ -162,7 +182,7 @@ def main():
 
     exit_event.set()
     loop.quit()
-    t.join()
+    t.join(timeout=1)
 
 
 if __name__ == '__main__':
