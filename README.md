@@ -1,22 +1,27 @@
-# Fix T480 / T480s / X1C6 Throttling on Linux
+# Fix Intel CPU Throttling on Linux
 Workaround for Linux throttling issues on Lenovo T480 / T480s / X1C6 notebooks as described [here](https://www.reddit.com/r/thinkpad/comments/870u0a/t480s_linux_throttling_bug/).
 
-This script forces the CPU package power limit (PL1/2) to **44 W** (29 W on battery) and the temperature trip point to **97 'C** (85 'C on battery) by overriding default values in MSR and MCHBAR every 5 seconds (30 on battery) to block the Embedded Controller from resetting these values to default.
+This script forces the CPU package power limit (PL1/2) to **44 W** (29 W on battery) and the temperature trip point to **95 'C** (85 'C on battery) by overriding default values in MSR and MCHBAR every 5 seconds (30 on battery) to block the Embedded Controller from resetting these values to default.
 
-### Undervolt
+Tested and working also for **T580**!
+
+### Undervolt:
 The script now also supports **undervolting** the CPU by configuring voltage offsets for CPU, cache, GPU, System Agent and Analog I/O planes. The script will re-apply undervolt on resume from standby and hibernate by listening to DBus signals.
 
 ## Requirements
 The python module `python-periphery` is used for accessing the MCHBAR register by memory mapped I/O. You also need `dbus` and `gobject` python bindings for listening to dbus signals on resume from sleep/hibernate.
 
+### Secure Boot:
+Right now it is mandatory to **disable Secure Boot** (in BIOS) in order to avoid [Kernel Lockdown](https://lwn.net/Articles/706637/). In particular Lockdown restricts access to MSR and PCI BAR (via /dev/mem) which are required by this script.
+
+### Update:
+The scripts is now running with Python3 by default (tested w/ 3.6) and a virtualenv is automatically created in `/opt/lenovo_fix`. Python2 should probably still work.
+
 ## Installation
 ```
+sudo apt install git virtualenv build-essential python3-dev libdbus-glib-1-dev libgirepository1.0-dev libcairo2-dev
 git clone https://github.com/erpalma/lenovo-throttling-fix.git
-sudo -H pip install python-periphery
-sudo apt install python-dbus python-gobject
-sudo make install
-sudo systemctl enable lenovo_fix.service
-sudo systemctl start lenovo_fix.service
+sudo ./install.sh
 ```
 
 ## Configuration

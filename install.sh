@@ -23,7 +23,7 @@ echo "Building virtualenv..."
 cp requirements.txt lenovo_fix.py "$INSTALL_DIR"
 cd "$INSTALL_DIR"
 virtualenv -p /usr/bin/python3 venv
-source venv/bin/activate
+. venv/bin/activate
 pip install -r requirements.txt
 
 echo "Enabling and starting systemd service..."
