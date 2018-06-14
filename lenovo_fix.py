@@ -139,9 +139,11 @@ def power_thread(config, regs, exit_event):
         enable_hwp_mode = config.getboolean('AC', 'HWP_Mode', fallback=False)
         if power_source == 'AC' and enable_hwp_mode:
             cpu_usage = float(psutil.cpu_percent(interval=wait_t))
-            # set the full performance mode only when load is greater than this threshold (~ at least 1 core full speed)
+            # set full performance mode only when load is greater than this threshold (~ at least 1 core full speed)
             performance_mode = cpu_usage > 100. / (cpu_count() * 1.25)
-            set_hwp('performance' if performance_mode else 'balance_performance')
+            # check again if we are on AC, since in the meantime we might have switched to BATTERY
+            if not is_on_battery():
+                set_hwp('performance' if performance_mode else 'balance_performance')
         else:
             exit_event.wait(wait_t)
 
