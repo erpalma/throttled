@@ -5,6 +5,9 @@ This script forces the CPU package power limit (PL1/2) to **44 W** (29 W on batt
 
 Tested and working also for **T580**!
 
+### Is this script really doing something on my PC??
+I suggest you to use the excellent **[s-tui](https://github.com/amanusk/s-tui)** tool to check and monitor the CPU usage, frequency, power and temperature under load! 
+
 ### Undervolt:
 The script now also supports **undervolting** the CPU by configuring voltage offsets for CPU, cache, GPU, System Agent and Analog I/O planes. The script will re-apply undervolt on resume from standby and hibernate by listening to DBus signals.
 
