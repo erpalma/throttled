@@ -27,11 +27,12 @@ The scripts is now running with Python3 by default (tested w/ 3.6) and a virtual
 
 ## Installation
 
-### Arch Linux:
+### Arch Linux [AUR package](https://aur.archlinux.org/packages/lenovo-throttling-fix-git/):
 ```
 yaourt -S lenovo-throttling-fix-git
 sudo systemctl enable --now lenovo_fix.service
 ```
+Thanks to *felixonmars* for creating and maintaining this package.
 
 ### Debian/Ubuntu:
 ```
