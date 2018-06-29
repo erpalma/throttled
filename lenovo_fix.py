@@ -30,6 +30,8 @@ VOLTAGE_PLANES = {
     'ANALOGIO': 4,
 }
 
+power = {'source': None, 'method': 'polling'}
+
 
 def writemsr(msr, val):
     n = glob.glob('/dev/cpu/[0-9]*/msr')
@@ -124,20 +126,22 @@ def power_thread(config, regs, exit_event):
     mchbar_mmio = MMIO(0xfed159a0, 8)
 
     while not exit_event.is_set():
-        power_source = 'BATTERY' if is_on_battery() else 'AC'
+        #
+        if power['method'] == 'polling':
+            power['source'] = 'BATTERY' if is_on_battery() else 'AC'
 
         # set temperature trip point
-        writemsr(0x1a2, regs[power_source]['MSR_TEMPERATURE_TARGET'])
+        writemsr(0x1a2, regs[power['source']]['MSR_TEMPERATURE_TARGET'])
 
         # set PL1/2 on MSR
-        writemsr(0x610, regs[power_source]['MSR_PKG_POWER_LIMIT'])
+        writemsr(0x610, regs[power['source']]['MSR_PKG_POWER_LIMIT'])
         # set MCHBAR register to the same PL1/2 values
-        mchbar_mmio.write32(0, regs[power_source]['MSR_PKG_POWER_LIMIT'] & 0xffffffff)
-        mchbar_mmio.write32(4, regs[power_source]['MSR_PKG_POWER_LIMIT'] >> 32)
+        mchbar_mmio.write32(0, regs[power['source']]['MSR_PKG_POWER_LIMIT'] & 0xffffffff)
+        mchbar_mmio.write32(4, regs[power['source']]['MSR_PKG_POWER_LIMIT'] >> 32)
 
-        wait_t = config.getfloat(power_source, 'Update_Rate_s')
+        wait_t = config.getfloat(power['source'], 'Update_Rate_s')
         enable_hwp_mode = config.getboolean('AC', 'HWP_Mode', fallback=False)
-        if power_source == 'AC' and enable_hwp_mode:
+        if power['source'] == 'AC' and enable_hwp_mode:
             cpu_usage = float(psutil.cpu_percent(interval=wait_t))
             # set full performance mode only when load is greater than this threshold (~ at least 1 core full speed)
             performance_mode = cpu_usage > 100. / (cpu_count() * 1.25)
@@ -149,6 +153,8 @@ def power_thread(config, regs, exit_event):
 
 
 def main():
+    power['source'] = 'BATTERY' if is_on_battery() else 'AC'
+
     config = load_config()
     regs = calc_reg_values(config)
 
@@ -167,6 +173,13 @@ def main():
         if not sleeping:
             undervolt(config)
 
+    def handle_ac_callback(*args):
+        try:
+            power['source'] = 'BATTERY' if args[1]['Online'] == 0 else 'AC'
+            power['method'] = 'dbus'
+        except:
+            power['method'] = 'polling'
+
     DBusGMainLoop(set_as_default=True)
     bus = dbus.SystemBus()
 
@@ -174,6 +187,11 @@ def main():
     if any(config.getfloat('UNDERVOLT', plane) != 0 for plane in VOLTAGE_PLANES):
         bus.add_signal_receiver(handle_sleep_callback, 'PrepareForSleep', 'org.freedesktop.login1.Manager',
                                 'org.freedesktop.login1')
+    bus.add_signal_receiver(
+        handle_ac_callback,
+        signal_name="PropertiesChanged",
+        dbus_interface="org.freedesktop.DBus.Properties",
+        path="/org/freedesktop/UPower/devices/line_power_AC")
 
     try:
         GObject.threads_init()
