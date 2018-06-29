@@ -2,4 +2,3 @@ configparser==3.5.0
 dbus-python==1.2.8
 psutil==5.4.6
 PyGObject==3.28.3
-python-periphery==1.1.1

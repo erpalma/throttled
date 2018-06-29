@@ -10,8 +10,8 @@ import subprocess
 
 from collections import defaultdict
 from dbus.mainloop.glib import DBusGMainLoop
+from mmio import MMIO
 from multiprocessing import cpu_count
-from periphery import MMIO
 from threading import Event, Thread
 
 try:

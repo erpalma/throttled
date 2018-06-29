@@ -20,7 +20,7 @@ echo "Copying systemd service file..."
 cp systemd/lenovo_fix.service /etc/systemd/system
 
 echo "Building virtualenv..."
-cp requirements.txt lenovo_fix.py "$INSTALL_DIR"
+cp requirements.txt lenovo_fix.py mmio.py "$INSTALL_DIR"
 cd "$INSTALL_DIR"
 virtualenv -p /usr/bin/python3 venv
 . venv/bin/activate
