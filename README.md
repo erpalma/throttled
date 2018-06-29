@@ -26,6 +26,14 @@ Right now it is mandatory to **disable Secure Boot** (in BIOS) in order to avoid
 The scripts is now running with Python3 by default (tested w/ 3.6) and a virtualenv is automatically created in `/opt/lenovo_fix`. Python2 should probably still work.
 
 ## Installation
+
+### Arch Linux:
+```
+yaourt -S lenovo-throttling-fix-git
+sudo systemctl enable --now lenovo_fix.service
+```
+
+### Debian/Ubuntu:
 ```
 sudo apt install git virtualenv build-essential python3-dev libdbus-glib-1-dev libgirepository1.0-dev libcairo2-dev
 git clone https://github.com/erpalma/lenovo-throttling-fix.git
