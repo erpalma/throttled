@@ -3,15 +3,23 @@ Workaround for Linux throttling issues on Lenovo T480 / T480s / X1C6 notebooks a
 
 This script forces the CPU package power limit (PL1/2) to **44 W** (29 W on battery) and the temperature trip point to **95 'C** (85 'C on battery) by overriding default values in MSR and MCHBAR every 5 seconds (30 on battery) to block the Embedded Controller from resetting these values to default.
 
-Tested and working also for **T580**!
+### Supported hardware
+Other users have confirmed that the script is also working for these laptops:
+- Lenovo T480
+- Lenovo T480s
+- Lenovo X1C6
+- Lenovo T580
+- Dell XPS 9370
+
+I will keep this list updated.
 
 ### Is this script really doing something on my PC??
 I suggest you to use the excellent **[s-tui](https://github.com/amanusk/s-tui)** tool to check and monitor the CPU usage, frequency, power and temperature under load! 
 
-### Undervolt:
+### Undervolt
 The script now also supports **undervolting** the CPU by configuring voltage offsets for CPU, cache, GPU, System Agent and Analog I/O planes. The script will re-apply undervolt on resume from standby and hibernate by listening to DBus signals.
 
-### HWP override (EXPERIMENTAL):
+### HWP override (EXPERIMENTAL)
 I have found that under load my CPU was not always hitting max turbo frequency, in particular when using one/two cores only. For instance, when running [prime95](https://www.mersenne.org/download/) (1 core, test #1) my CPU is limited to about 3500 MHz over the theoretical 4000 MHz maximum. The reason is the value for the HWP energy performance [hints](http://manpages.ubuntu.com/manpages/artful/man8/x86_energy_perf_policy.8.html). By default TLP sets this value to "balance_performance" on AC in order to reduce the power consumption/heat in idle. By setting this value to "performance" I was able to reach 3900 MHz in the prime95 single core test, achieving a +400 MHz boost. Since this value forces the CPU to full speed even during idle, a new experimental feature allows to automatically set HWP to performance under load and revert it to balanced when idle. This feature can be enabled (in AC mode *only*) by setting to `True` the `HWP_Mode` parameter in the config file. 
 
 I have run **[Geekbench 4](https://browser.geekbench.com/v4/cpu/8656840)** and now I can get a score of 5391/17265! On balance_performance I can reach only 4672/16129, so **15% improvement** in single core and 7% in multicore, not bad ;)
@@ -19,10 +27,10 @@ I have run **[Geekbench 4](https://browser.geekbench.com/v4/cpu/8656840)** and n
 ## Requirements
 The python module `python-periphery` is used for accessing the MCHBAR register by memory mapped I/O. You also need `dbus` and `gobject` python bindings for listening to dbus signals on resume from sleep/hibernate.
 
-### Secure Boot:
+### Secure Boot
 Right now it is mandatory to **disable Secure Boot** (in BIOS) in order to avoid [Kernel Lockdown](https://lwn.net/Articles/706637/). In particular Lockdown restricts access to MSR and PCI BAR (via /dev/mem) which are required by this script.
 
-### Update:
+### Update
 The scripts is now running with Python3 by default (tested w/ 3.6) and a virtualenv is automatically created in `/opt/lenovo_fix`. Python2 should probably still work.
 
 ## Installation
@@ -34,7 +42,7 @@ sudo systemctl enable --now lenovo_fix.service
 ```
 Thanks to *felixonmars* for creating and maintaining this package.
 
-### Debian/Ubuntu:
+### Debian/Ubuntu
 ```
 sudo apt install git virtualenv build-essential python3-dev libdbus-glib-1-dev libgirepository1.0-dev libcairo2-dev
 git clone https://github.com/erpalma/lenovo-throttling-fix.git
@@ -63,4 +71,4 @@ ANALOGIO: 0
 ```
 
 ## Disclaimer
-This script overrides the default values set by Lenovo. I'm using it without any problem, but it is still experimental so use it at your own risk. This script can be probably adapted/used on other notebooks too.
+This script overrides the default values set by Lenovo. I'm using it without any problem, but it is still experimental so use it at your own risk.
