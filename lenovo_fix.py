@@ -30,6 +30,8 @@ VOLTAGE_PLANES = {
     'ANALOGIO': 4,
 }
 
+TRIP_TEMP_RANGE = (40, 97)
+
 power = {'source': None, 'method': 'polling'}
 
 
@@ -77,16 +79,31 @@ def load_config():
     config = configparser.ConfigParser()
     config.read(CONFIG_PATH)
 
+    # config values sanity check
     for power_source in ('AC', 'BATTERY'):
-        assert 0 < config.getfloat(power_source, 'Update_Rate_s')
-        assert 0 < config.getfloat(power_source, 'PL1_Tdp_W')
-        assert 0 < config.getfloat(power_source, 'PL1_Duration_s')
-        assert 0 < config.getfloat(power_source, 'PL2_Tdp_W')
-        assert 0 < config.getfloat(power_source, 'PL2_Duration_S')
-        assert 40 < config.getfloat(power_source, 'Trip_Temp_C') < 98
+        for option in (
+                'Update_Rate_s',
+                'PL1_Tdp_W',
+                'PL1_Duration_s',
+                'PL2_Tdp_W',
+                'PL2_Duration_S',
+        ):
+            config.set(power_source, option, str(max(0.1, config.getfloat(power_source, option))))
+
+        trip_temp = config.getfloat(power_source, 'Trip_Temp_C')
+        valid_trip_temp = min(TRIP_TEMP_RANGE[1], max(TRIP_TEMP_RANGE[0], trip_temp))
+        if trip_temp != valid_trip_temp:
+            config.set(power_source, 'Trip_Temp_C', str(valid_trip_temp))
+            print('[!] Overriding invalid "Trip_Temp_C" value in "{:s}": {:.1f} -> {:.1f}'.format(
+                power_source, trip_temp, valid_trip_temp))
 
     for plane in VOLTAGE_PLANES:
-        assert config.getfloat('UNDERVOLT', plane) <= 0
+        value = config.getfloat('UNDERVOLT', plane)
+        valid_value = min(0, value)
+        if value != valid_value:
+            config.set('UNDERVOLT', plane, str(valid_value))
+            print('[!] Overriding invalid "UNDERVOLT" value in "{:s}" voltage plane: {:.0f} -> {:.0f}'.format(
+                plane, value, valid_value))
 
     return config
 
