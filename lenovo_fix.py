@@ -7,10 +7,12 @@ import os
 import psutil
 import struct
 import subprocess
+import sys
 
 from collections import defaultdict
 from dbus.mainloop.glib import DBusGMainLoop
-from mmio import MMIO
+from errno import EACCES, EPERM
+from mmio import MMIO, MMIOError
 from multiprocessing import cpu_count
 from threading import Event, Thread
 
@@ -37,16 +39,24 @@ power = {'source': None, 'method': 'polling'}
 
 def writemsr(msr, val):
     n = glob.glob('/dev/cpu/[0-9]*/msr')
-    for c in n:
-        f = os.open(c, os.O_WRONLY)
-        os.lseek(f, msr, os.SEEK_SET)
-        os.write(f, struct.pack('Q', val))
-        os.close(f)
     if not n:
         try:
             subprocess.check_call(('modprobe', 'msr'))
         except subprocess.CalledProcessError:
-            raise OSError("Unable to load msr module.")
+            print('[E] Unable to load the msr module.')
+            sys.exit(1)
+    try:
+        for c in n:
+            f = os.open(c, os.O_WRONLY)
+            os.lseek(f, msr, os.SEEK_SET)
+            os.write(f, struct.pack('Q', val))
+            os.close(f)
+    except (IOError, OSError) as e:
+        if e.errno == EPERM or e.errno == EACCES:
+            print('[E] Unable to write to MSR. Try to disable Secure Boot.')
+            sys.exit(1)
+        else:
+            raise e
 
 
 def is_on_battery():
@@ -59,7 +69,7 @@ def calc_time_window_vars(t):
         for Z in range(2**2):
             if t <= (2**Y) * (1. + Z / 4.) * 0.000977:
                 return (Y, Z)
-    raise Exception('Unable to find a good combination!')
+    raise ValueError('Unable to find a good combination!')
 
 
 def undervolt(config):
@@ -140,7 +150,11 @@ def set_hwp(pref):
 
 
 def power_thread(config, regs, exit_event):
-    mchbar_mmio = MMIO(0xfed159a0, 8)
+    try:
+        mchbar_mmio = MMIO(0xfed159a0, 8)
+    except MMIOError:
+        print('[E] Unable to open /dev/mem. Try to disable Secure Boot.')
+        sys.exit(1)
 
     while not exit_event.is_set():
         #
@@ -170,6 +184,10 @@ def power_thread(config, regs, exit_event):
 
 
 def main():
+    if os.geteuid() != 0:
+        print('[E] No root no party. Try again with sudo.')
+        sys.exit(1)
+
     power['source'] = 'BATTERY' if is_on_battery() else 'AC'
 
     config = load_config()
@@ -179,9 +197,9 @@ def main():
         return
 
     exit_event = Event()
-    t = Thread(target=power_thread, args=(config, regs, exit_event))
-    t.daemon = True
-    t.start()
+    thread = Thread(target=power_thread, args=(config, regs, exit_event))
+    thread.daemon = True
+    thread.start()
 
     undervolt(config)
 
@@ -219,7 +237,7 @@ def main():
 
     exit_event.set()
     loop.quit()
-    t.join(timeout=1)
+    thread.join(timeout=1)
 
 
 if __name__ == '__main__':
