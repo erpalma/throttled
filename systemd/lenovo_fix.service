@@ -1,5 +1,5 @@
 [Unit]
-Description=Fix Lenovo T480/T480s/X1C6 throttling on Linux
+Description=Stop Intel throttling 
 
 [Service]
 Type=simple
