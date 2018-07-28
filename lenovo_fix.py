@@ -38,7 +38,7 @@ power = {'source': None, 'method': 'polling'}
 
 
 def writemsr(msr, val):
-    n = glob.glob('/dev/cpu/[0-9]*/msr')
+    n = glob.glob('/dev/cpu/[0-%d]/msr' % (cpu_count() - 1))
     if not n:
         try:
             subprocess.check_call(('modprobe', 'msr'))
