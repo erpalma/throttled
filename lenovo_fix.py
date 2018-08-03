@@ -33,6 +33,7 @@ VOLTAGE_PLANES = {
 }
 
 TRIP_TEMP_RANGE = (40, 97)
+C_TDP_RANGE = (0, 2)
 
 power = {'source': None, 'method': 'polling'}
 
@@ -137,6 +138,11 @@ def calc_reg_values(config):
         regs[power_source]['MSR_PKG_POWER_LIMIT'] = PL1 | (1 << 15) | (TW1 << 17) | (PL2 << 32) | (1 << 47) | (
             TW2 << 49)
 
+        # cTDP
+        c_tdp_target_value = int(config.getfloat(power_source, 'cTDP'))
+        valid_c_tdp_target_value = valid_trip_temp = min(C_TDP_RANGE[1], max(C_TDP_RANGE[0], c_tdp_target_value))
+        regs[power_source]['MSR_CONFIG_TDP_CONTROL'] = valid_c_tdp_target_value
+
     return regs
 
 
@@ -163,6 +169,10 @@ def power_thread(config, regs, exit_event):
 
         # set temperature trip point
         writemsr(0x1a2, regs[power['source']]['MSR_TEMPERATURE_TARGET'])
+
+        # set cTDP
+        # TODO read MSR 0xCE to check if the operation is possible
+        writemsr(0x64b, regs[power['source']]['MSR_CONFIG_TDP_CONTROL'])
 
         # set PL1/2 on MSR
         writemsr(0x610, regs[power['source']]['MSR_PKG_POWER_LIMIT'])
