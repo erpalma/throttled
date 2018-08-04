@@ -9,6 +9,7 @@ Other users have confirmed that the script is also working for these laptops:
 - Lenovo T480s
 - Lenovo X1C6
 - Lenovo T580
+- Lenovo L480
 - Dell XPS 9370
 
 I will keep this list updated.
@@ -30,6 +31,9 @@ A stripped down version of the python module `python-periphery` is now built-in 
 ### Secure Boot
 Right now it is mandatory to **disable Secure Boot** (in BIOS) in order to avoid [Kernel Lockdown](https://lwn.net/Articles/706637/). In particular Lockdown restricts access to MSR and PCI BAR (via /dev/mem) which are required by this script.
 
+### Thermald
+As discovered by *DEvil0000* the Linux Thermal Monitor ([thermald](https://github.com/intel/thermal_daemon)) can conflict with the purpose of this script. In particular, thermald might be pre-installed (e.g. on Ubuntu) and configured in such a way to keep the CPU temperature below a certain threshold (~80 'C) by applying throtthling or messing up with RAPL or other CPU-specific registers. I strongly suggest to either disable/uninstall it or to review its default configuration.
+
 ### Update
 The scripts is now running with Python3 by default (tested w/ 3.6) and a virtualenv is automatically created in `/opt/lenovo_fix`. Python2 should probably still work.
 
@@ -50,7 +54,11 @@ sudo ./install.sh
 ```
 If you own a X1C6 you can also check a tutorial for Ubuntu 18.04 [here](https://mensfeld.pl/2018/05/lenovo-thinkpad-x1-carbon-6th-gen-2018-ubuntu-18-04-tweaks/).
 
-You should make sure that **_thermald_** is not setting it back down. Stopping/disabling it will do the trick.
+You should make sure that **_thermald_** is not setting it back down. Stopping/disabling it will do the trick:
+```
+sudo systemctl stop thermald.service
+sudo systemctl disable thermald.service
+```
 
 ### Fedora
 ```
