@@ -50,6 +50,8 @@ sudo ./install.sh
 ```
 If you own a X1C6 you can also check a tutorial for Ubuntu 18.04 [here](https://mensfeld.pl/2018/05/lenovo-thinkpad-x1-carbon-6th-gen-2018-ubuntu-18-04-tweaks/).
 
+You should make sure that **_thermald_** is not setting it back down. Stopping/disabling it will do the trick.
+
 ### Fedora
 ```
 dnf install cairo-gobject-devel gobject-introspection-devel dbus-glib-devel python-virtualenv
