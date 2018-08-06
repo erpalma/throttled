@@ -139,9 +139,12 @@ def calc_reg_values(config):
             TW2 << 49)
 
         # cTDP
-        c_tdp_target_value = int(config.getfloat(power_source, 'cTDP'))
-        valid_c_tdp_target_value = valid_trip_temp = min(C_TDP_RANGE[1], max(C_TDP_RANGE[0], c_tdp_target_value))
-        regs[power_source]['MSR_CONFIG_TDP_CONTROL'] = valid_c_tdp_target_value
+        try:
+            c_tdp_target_value = int(config.getfloat(power_source, 'cTDP'))
+            valid_c_tdp_target_value = valid_trip_temp = min(C_TDP_RANGE[1], max(C_TDP_RANGE[0], c_tdp_target_value))
+            regs[power_source]['MSR_CONFIG_TDP_CONTROL'] = valid_c_tdp_target_value
+        except configparser.NoOptionError:
+            pass
 
     return regs
 
