@@ -59,6 +59,33 @@ def writemsr(msr, val):
         else:
             raise e
 
+# returns the value between from_bit and to_bit as unsigned long
+def readmsr(msr, from_bit = 0, to_bit = 63):
+    if from_bit > to_bit:
+        print('wrong readmsr bit params')
+        sys.exit(1)
+    n = ['/dev/cpu/{:d}/msr'.format(x) for x in range(cpu_count())]
+    if not os.path.exists(n[0]):
+        try:
+            subprocess.check_call(('modprobe', 'msr'))
+        except subprocess.CalledProcessError:
+            print('[E] Unable to load the msr module.')
+            sys.exit(1)
+    try:
+        for c in n:
+            f = os.open(c, os.O_RDONLY)
+            os.lseek(f, msr, os.SEEK_SET)
+            val = struct.unpack('Q', os.read(f, 8))[0]
+            os.close(f)
+            extractor = int(''.join(["0"]*(63-to_bit) + ["1"]*(to_bit+1-from_bit) + ["0"]*from_bit), 2)
+            return (val & extractor) >> from_bit
+    except (IOError, OSError) as e:
+        if e.errno == EPERM or e.errno == EACCES:
+            print('[E] Unable to read from MSR. Try to disable Secure Boot.')
+            sys.exit(1)
+        else:
+            raise e
+
 
 def is_on_battery():
     with open(SYSFS_POWER_PATH) as f:
