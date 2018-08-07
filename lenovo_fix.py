@@ -93,9 +93,11 @@ def is_on_battery():
 
 
 def calc_time_window_vars(t):
+    # 0.000977 is the time unit of this CPU
+    time_unit = 1.0/2**readmsr(0x606, 16, 19)
     for Y in range(2**5):
         for Z in range(2**2):
-            if t <= (2**Y) * (1. + Z / 4.) * 0.000977:
+            if t <= (2**Y) * (1. + Z / 4.) * time_unit:
                 return (Y, Z)
     raise ValueError('Unable to find a good combination!')
 
@@ -154,11 +156,12 @@ def calc_reg_values(config):
         regs[power_source]['MSR_TEMPERATURE_TARGET'] = trip_offset << 24
 
         # 0.125 is the power unit of this CPU
-        PL1 = int(round(config.getfloat(power_source, 'PL1_Tdp_W') / 0.125))
+        power_unit = 1.0/2**readmsr(0x606, 0, 3)
+        PL1 = int(round(config.getfloat(power_source, 'PL1_Tdp_W') / power_unit))
         Y, Z = calc_time_window_vars(config.getfloat(power_source, 'PL1_Duration_s'))
         TW1 = Y | (Z << 5)
 
-        PL2 = int(round(config.getfloat(power_source, 'PL2_Tdp_W') / 0.125))
+        PL2 = int(round(config.getfloat(power_source, 'PL2_Tdp_W') / power_unit))
         Y, Z = calc_time_window_vars(config.getfloat(power_source, 'PL2_Duration_s'))
         TW2 = Y | (Z << 5)
 
@@ -168,7 +171,7 @@ def calc_reg_values(config):
         # cTDP
         try:
             c_tdp_target_value = int(config.getfloat(power_source, 'cTDP'))
-            valid_c_tdp_target_value = valid_trip_temp = min(C_TDP_RANGE[1], max(C_TDP_RANGE[0], c_tdp_target_value))
+            valid_c_tdp_target_value = min(C_TDP_RANGE[1], max(C_TDP_RANGE[0], c_tdp_target_value))
             regs[power_source]['MSR_CONFIG_TDP_CONTROL'] = valid_c_tdp_target_value
         except configparser.NoOptionError:
             pass
@@ -198,11 +201,16 @@ def power_thread(config, regs, exit_event):
             power['source'] = 'BATTERY' if is_on_battery() else 'AC'
 
         # set temperature trip point
-        writemsr(0x1a2, regs[power['source']]['MSR_TEMPERATURE_TARGET'])
+        if readmsr(0xce, 30, 30) != 1:
+            print("setting temperature target is not supported by this CPU")
+        else:
+            writemsr(0x1a2, regs[power['source']]['MSR_TEMPERATURE_TARGET'])
 
         # set cTDP
-        # TODO read MSR 0xCE to check if the operation is possible
-        writemsr(0x64b, regs[power['source']]['MSR_CONFIG_TDP_CONTROL'])
+        if readmsr(0xce, 33, 34) < 2:
+            print("cTDP setting not supported by this cpu")
+        else:
+            writemsr(0x64b, regs[power['source']]['MSR_CONFIG_TDP_CONTROL'])
 
         # set PL1/2 on MSR
         writemsr(0x610, regs[power['source']]['MSR_PKG_POWER_LIMIT'])
