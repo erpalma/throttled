@@ -33,6 +33,7 @@ VOLTAGE_PLANES = {
 }
 
 TRIP_TEMP_RANGE = (40, 97)
+C_TDP_RANGE = (0, 2)
 
 power = {'source': None, 'method': 'polling'}
 
@@ -58,6 +59,33 @@ def writemsr(msr, val):
         else:
             raise e
 
+# returns the value between from_bit and to_bit as unsigned long
+def readmsr(msr, from_bit = 0, to_bit = 63):
+    if from_bit > to_bit:
+        print('wrong readmsr bit params')
+        sys.exit(1)
+    n = ['/dev/cpu/{:d}/msr'.format(x) for x in range(cpu_count())]
+    if not os.path.exists(n[0]):
+        try:
+            subprocess.check_call(('modprobe', 'msr'))
+        except subprocess.CalledProcessError:
+            print('[E] Unable to load the msr module.')
+            sys.exit(1)
+    try:
+        for c in n:
+            f = os.open(c, os.O_RDONLY)
+            os.lseek(f, msr, os.SEEK_SET)
+            val = struct.unpack('Q', os.read(f, 8))[0]
+            os.close(f)
+            extractor = int(''.join(["0"]*(63-to_bit) + ["1"]*(to_bit+1-from_bit) + ["0"]*from_bit), 2)
+            return (val & extractor) >> from_bit
+    except (IOError, OSError) as e:
+        if e.errno == EPERM or e.errno == EACCES:
+            print('[E] Unable to read from MSR. Try to disable Secure Boot.')
+            sys.exit(1)
+        else:
+            raise e
+
 
 def is_on_battery():
     with open(SYSFS_POWER_PATH) as f:
@@ -65,9 +93,11 @@ def is_on_battery():
 
 
 def calc_time_window_vars(t):
+    # 0.000977 is the time unit of this CPU
+    time_unit = 1.0/2**readmsr(0x606, 16, 19)
     for Y in range(2**5):
         for Z in range(2**2):
-            if t <= (2**Y) * (1. + Z / 4.) * 0.000977:
+            if t <= (2**Y) * (1. + Z / 4.) * time_unit:
                 return (Y, Z)
     raise ValueError('Unable to find a good combination!')
 
@@ -126,16 +156,25 @@ def calc_reg_values(config):
         regs[power_source]['MSR_TEMPERATURE_TARGET'] = trip_offset << 24
 
         # 0.125 is the power unit of this CPU
-        PL1 = int(round(config.getfloat(power_source, 'PL1_Tdp_W') / 0.125))
+        power_unit = 1.0/2**readmsr(0x606, 0, 3)
+        PL1 = int(round(config.getfloat(power_source, 'PL1_Tdp_W') / power_unit))
         Y, Z = calc_time_window_vars(config.getfloat(power_source, 'PL1_Duration_s'))
         TW1 = Y | (Z << 5)
 
-        PL2 = int(round(config.getfloat(power_source, 'PL2_Tdp_W') / 0.125))
+        PL2 = int(round(config.getfloat(power_source, 'PL2_Tdp_W') / power_unit))
         Y, Z = calc_time_window_vars(config.getfloat(power_source, 'PL2_Duration_s'))
         TW2 = Y | (Z << 5)
 
         regs[power_source]['MSR_PKG_POWER_LIMIT'] = PL1 | (1 << 15) | (TW1 << 17) | (PL2 << 32) | (1 << 47) | (
             TW2 << 49)
+
+        # cTDP
+        try:
+            c_tdp_target_value = int(config.getfloat(power_source, 'cTDP'))
+            valid_c_tdp_target_value = min(C_TDP_RANGE[1], max(C_TDP_RANGE[0], c_tdp_target_value))
+            regs[power_source]['MSR_CONFIG_TDP_CONTROL'] = valid_c_tdp_target_value
+        except configparser.NoOptionError:
+            pass
 
     return regs
 
@@ -162,7 +201,16 @@ def power_thread(config, regs, exit_event):
             power['source'] = 'BATTERY' if is_on_battery() else 'AC'
 
         # set temperature trip point
-        writemsr(0x1a2, regs[power['source']]['MSR_TEMPERATURE_TARGET'])
+        if readmsr(0xce, 30, 30) != 1:
+            print("setting temperature target is not supported by this CPU")
+        else:
+            writemsr(0x1a2, regs[power['source']]['MSR_TEMPERATURE_TARGET'])
+
+        # set cTDP
+        if readmsr(0xce, 33, 34) < 2:
+            print("cTDP setting not supported by this cpu")
+        else:
+            writemsr(0x64b, regs[power['source']]['MSR_CONFIG_TDP_CONTROL'])
 
         # set PL1/2 on MSR
         writemsr(0x610, regs[power['source']]['MSR_PKG_POWER_LIMIT'])

@@ -26,6 +26,9 @@ I have found that under load my CPU was not always hitting max turbo frequency, 
 
 I have run **[Geekbench 4](https://browser.geekbench.com/v4/cpu/8656840)** and now I can get a score of 5391/17265! On balance_performance I can reach only 4672/16129, so **15% improvement** in single core and 7% in multicore, not bad ;)
 
+### setting cTDP (EXPERIMENTAL)
+On a lot of modern CPUs from Intel one can configure the TDP up or down based on predefined profiles. This is what this option does. For a i7-8650U normal would be 15W, up profile is setting it to 25W and down to 10W. You can lookup the values of your CPU at the Intel product website.
+
 ## Requirements
 A stripped down version of the python module `python-periphery` is now built-in and it is used for accessing the MCHBAR register by memory mapped I/O. You also need `dbus` and `gobject` python bindings for listening to dbus signals on resume from sleep/hibernate.
 
