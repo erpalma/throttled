@@ -32,7 +32,7 @@ VOLTAGE_PLANES = {
     'ANALOGIO': 4,
 }
 
-TRIP_TEMP_RANGE = (40, 97)
+TRIP_TEMP_RANGE = [40, 97]
 C_TDP_RANGE = (0, 2)
 
 power = {'source': None, 'method': 'polling'}
@@ -152,9 +152,17 @@ def load_config():
 def calc_reg_values(config):
     regs = defaultdict(dict)
     for power_source in ('AC', 'BATTERY'):
-        # the critical temperature for this CPU is 100 C
-        trip_offset = int(round(100 - config.getfloat(power_source, 'Trip_Temp_C')))
-        regs[power_source]['MSR_TEMPERATURE_TARGET'] = trip_offset << 24
+        if readmsr(0xce, 30, 30) != 1:
+            print("[W] Setting temperature target is not supported by this CPU")
+        else:
+            # the critical temperature for my CPU is 100 'C
+            critical_temp = readmsr(0x1a2, 16, 23)
+            # update the allowed temp range to keep at least 3 'C from the CPU critical temperature
+            global TRIP_TEMP_RANGE
+            TRIP_TEMP_RANGE[1] = min(TRIP_TEMP_RANGE[1], critical_temp - 3)
+
+            trip_offset = int(round(critical_temp - config.getfloat(power_source, 'Trip_Temp_C')))
+            regs[power_source]['MSR_TEMPERATURE_TARGET'] = trip_offset << 24
 
         # 0.125 is the power unit of my CPU
         power_unit = 1.0 / 2**readmsr(0x606, 0, 3)
@@ -170,13 +178,13 @@ def calc_reg_values(config):
             TW2 << 49)
 
         # cTDP
-        try:
-            c_tdp_target_value = int(config.getfloat(power_source, 'cTDP'))
-            valid_c_tdp_target_value = min(C_TDP_RANGE[1], max(C_TDP_RANGE[0], c_tdp_target_value))
-            regs[power_source]['MSR_CONFIG_TDP_CONTROL'] = valid_c_tdp_target_value
-        except configparser.NoOptionError:
-            pass
-
+        c_tdp_target_value = config.getint(power_source, 'cTDP', fallback=None)
+        if c_tdp_target_value is not None:
+            if readmsr(0xce, 33, 34) < 2:
+                print("[W] cTDP setting not supported by this CPU")
+            else:
+                valid_c_tdp_target_value = min(C_TDP_RANGE[1], max(C_TDP_RANGE[0], c_tdp_target_value))
+                regs[power_source]['MSR_CONFIG_TDP_CONTROL'] = valid_c_tdp_target_value
     return regs
 
 
@@ -202,15 +210,11 @@ def power_thread(config, regs, exit_event):
             power['source'] = 'BATTERY' if is_on_battery() else 'AC'
 
         # set temperature trip point
-        if readmsr(0xce, 30, 30) != 1:
-            print("setting temperature target is not supported by this CPU")
-        else:
+        if 'MSR_TEMPERATURE_TARGET' in regs[power['source']]:
             writemsr(0x1a2, regs[power['source']]['MSR_TEMPERATURE_TARGET'])
 
         # set cTDP
-        if readmsr(0xce, 33, 34) < 2:
-            print("cTDP setting not supported by this cpu")
-        else:
+        if 'MSR_CONFIG_TDP_CONTROL' in regs[power['source']]:
             writemsr(0x64b, regs[power['source']]['MSR_CONFIG_TDP_CONTROL'])
 
         # set PL1/2 on MSR
