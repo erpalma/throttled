@@ -78,8 +78,8 @@ def readmsr(msr, from_bit=0, to_bit=63):
             os.lseek(f, msr, os.SEEK_SET)
             val = struct.unpack('Q', os.read(f, 8))[0]
             os.close(f)
-            extractor = int(''.join(["0"]*(63-to_bit) + ["1"]*(to_bit+1-from_bit) + ["0"]*from_bit), 2)
-            return (val & extractor) >> from_bit
+            mask = sum(2**x for x in range(from_bit, to_bit + 1))
+            return (val & mask) >> from_bit
     except (IOError, OSError) as e:
         if e.errno == EPERM or e.errno == EACCES:
             print('[E] Unable to read from MSR. Try to disable Secure Boot.')
