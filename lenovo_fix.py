@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import argparse
 import configparser
 import dbus
 import glob
@@ -22,7 +23,6 @@ except ImportError:
     import gobject as GObject
 
 SYSFS_POWER_PATH = '/sys/class/power_supply/AC/online'
-CONFIG_PATH = '/etc/lenovo_fix.conf'
 
 VOLTAGE_PLANES = {
     'CORE': 0,
@@ -110,7 +110,13 @@ def calc_time_window_vars(t):
 
 def undervolt(config):
     for plane in VOLTAGE_PLANES:
-        writemsr(0x150, calc_undervolt_msr(plane, config.getfloat('UNDERVOLT', plane)))
+        write_value = calc_undervolt_msr(plane, config.getfloat('UNDERVOLT', plane))
+        writemsr(0x150, write_value)
+        if args.debug:
+            write_value &= 0xFFFFFFFF
+            writemsr(0x150, 0x8000001000000000 | (VOLTAGE_PLANES[plane] << 40))
+            read_value = readmsr(0x150, flatten=True)
+            print('[D] Undervolt plane {:s} - write {:#x} - read {:#x}'.format(plane, write_value, read_value))
 
 
 def calc_undervolt_msr(plane, offset):
@@ -123,7 +129,7 @@ def calc_undervolt_msr(plane, offset):
 
 def load_config():
     config = configparser.ConfigParser()
-    config.read(CONFIG_PATH)
+    config.read(args.config)
 
     # config values sanity check
     for power_source in ('AC', 'BATTERY'):
@@ -196,10 +202,13 @@ def calc_reg_values(config):
 def set_hwp(pref):
     # set HWP energy performance hints
     assert pref in ('performance', 'balance_performance', 'default', 'balance_power', 'power')
-    n = glob.glob('/sys/devices/system/cpu/cpu[0-9]*/cpufreq/energy_performance_preference')
-    for c in n:
+    CPUs = ['/sys/devices/system/cpu/{:d}/cpufreq/energy_performance_preference'.format(x) for x in range(cpu_count())]
+    for i, c in enumerate(CPUs):
         with open(c, 'wb') as f:
             f.write(pref.encode())
+        if args.debug:
+            with open(c) as f:
+                print('[D] HWP for cpu{:d} - write {:s} - read {:s}'.format(i, pref, f.read()))
 
 
 def power_thread(config, regs, exit_event):
@@ -216,17 +225,32 @@ def power_thread(config, regs, exit_event):
 
         # set temperature trip point
         if 'MSR_TEMPERATURE_TARGET' in regs[power['source']]:
-            writemsr(0x1a2, regs[power['source']]['MSR_TEMPERATURE_TARGET'])
+            write_value = regs[power['source']]['MSR_TEMPERATURE_TARGET']
+            writemsr(0x1a2, write_value)
+            if args.debug:
+                read_value = readmsr(0x1a2, 24, 29, flatten=True)
+                print('[D] TEMPERATURE_TARGET - write {:#x} - read {:#x}'.format(write_value >> 24, read_value))
 
         # set cTDP
         if 'MSR_CONFIG_TDP_CONTROL' in regs[power['source']]:
-            writemsr(0x64b, regs[power['source']]['MSR_CONFIG_TDP_CONTROL'])
+            write_value = regs[power['source']]['MSR_CONFIG_TDP_CONTROL']
+            writemsr(0x64b, write_value)
+            if args.debug:
+                read_value = readmsr(0x64b, 0, 1, flatten=True)
+                print('[D] CONFIG_TDP_CONTROL - write {:#x} - read {:#x}'.format(write_value, read_value))
 
         # set PL1/2 on MSR
-        writemsr(0x610, regs[power['source']]['MSR_PKG_POWER_LIMIT'])
+        write_value = regs[power['source']]['MSR_PKG_POWER_LIMIT']
+        writemsr(0x610, write_value)
+        if args.debug:
+            read_value = readmsr(0x610, 0, 55, flatten=True)
+            print('[D] MSR PACKAGE_POWER_LIMIT - write {:#x} - read {:#x}'.format(write_value, read_value))
         # set MCHBAR register to the same PL1/2 values
-        mchbar_mmio.write32(0, regs[power['source']]['MSR_PKG_POWER_LIMIT'] & 0xffffffff)
-        mchbar_mmio.write32(4, regs[power['source']]['MSR_PKG_POWER_LIMIT'] >> 32)
+        mchbar_mmio.write32(0, write_value & 0xffffffff)
+        mchbar_mmio.write32(4, write_value >> 32)
+        if args.debug:
+            read_value = mchbar_mmio.read32(0) | (mchbar_mmio.read32(4) << 32)
+            print('[D] MCHBAR PACKAGE_POWER_LIMIT - write {:#x} - read {:#x}'.format(write_value, read_value))
 
         wait_t = config.getfloat(power['source'], 'Update_Rate_s')
         enable_hwp_mode = config.getboolean('AC', 'HWP_Mode', fallback=False)
@@ -242,9 +266,16 @@ def power_thread(config, regs, exit_event):
 
 
 def main():
+    global args
+
     if os.geteuid() != 0:
         print('[E] No root no party. Try again with sudo.')
         sys.exit(1)
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--debug', action='store_true', help='add some debug info and additional checks')
+    parser.add_argument('--config', default='/etc/lenovo_fix.conf', help='override default config file path')
+    args = parser.parse_args()
 
     power['source'] = 'BATTERY' if is_on_battery() else 'AC'
 

@@ -61,11 +61,7 @@ class MMIO(object):
 
         try:
             self.mapping = mmap.mmap(
-                fd,
-                self._aligned_size,
-                flags=mmap.MAP_SHARED,
-                prot=mmap.PROT_WRITE,
-                offset=self._aligned_physaddr)
+                fd, self._aligned_size, flags=mmap.MAP_SHARED, prot=mmap.PROT_WRITE, offset=self._aligned_physaddr)
         except OSError as e:
             raise MMIOError(e.errno, "Mapping /dev/mem: " + e.strerror)
 
@@ -82,6 +78,24 @@ class MMIO(object):
     def _validate_offset(self, offset, length):
         if (offset + length) > self._aligned_size:
             raise ValueError("Offset out of bounds.")
+
+    def read32(self, offset):
+        """Read 32-bits from the specified `offset` in bytes, relative to the
+        base physical address of the MMIO region.
+        Args:
+            offset (int, long): offset from base physical address, in bytes.
+        Returns:
+            int: 32-bit value read.
+        Raises:
+            TypeError: if `offset` type is invalid.
+            ValueError: if `offset` is out of bounds.
+        """
+        if not isinstance(offset, (int, long)):
+            raise TypeError("Invalid offset type, should be integer.")
+
+        offset = self._adjust_offset(offset)
+        self._validate_offset(offset, 4)
+        return struct.unpack("=L", self.mapping[offset:offset + 4])[0]
 
     def write32(self, offset, value):
         """Write 32-bits to the specified `offset` in bytes, relative to the
