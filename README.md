@@ -92,5 +92,20 @@ ANALOGIO: 0
 ```
 **IMPORTANT:** Please notice that *my* system is stable with these values. Your notebook might crash even with slight undervolting! You should test your system and slowly incresing undervolt to find the maximum stable value for your CPU. You can check [this](https://www.notebookcheck.net/Intel-Extreme-Tuning-Utility-XTU-Undervolting-Guide.272120.0.html) tutorial if you don't know where to start.
 
+## Debug
+You can enable the `--debug` option to read back written values and check if the script is working properly. This is an example output:
+```
+./lenovo_fix.py --debug
+[D] TEMPERATURE_TARGET - write 0xf - read 0xf
+[D] Undervolt plane CORE - write 0xf2800000 - read 0xf2800000
+[D] Undervolt plane GPU - write 0xf5200000 - read 0xf5200000
+[D] Undervolt plane CACHE - write 0xf2800000 - read 0xf2800000
+[D] Undervolt plane UNCORE - write 0xf5200000 - read 0xf5200000
+[D] Undervolt plane ANALOGIO - write 0x0 - read 0x0
+[D] MSR PACKAGE_POWER_LIMIT - write 0xcc816000dc80e8 - read 0xcc816000dc80e8
+[D] MCHBAR PACKAGE_POWER_LIMIT - write 0xcc816000dc80e8 - read 0xcc816000dc80e8
+[D] TEMPERATURE_TARGET - write 0xf - read 0xf
+```
+
 ## Disclaimer
 This script overrides the default values set by Lenovo. I'm using it without any problem, but it is still experimental so use it at your own risk.
