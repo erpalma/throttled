@@ -61,7 +61,8 @@ def writemsr(msr, val):
 
 
 # returns the value between from_bit and to_bit as unsigned long
-def readmsr(msr, from_bit=0, to_bit=63):
+def readmsr(msr, from_bit=0, to_bit=63, cpu=None, flatten=False):
+    assert cpu is None or cpu in range(cpu_count())
     if from_bit > to_bit:
         print('[E] Wrong readmsr bit params')
         sys.exit(1)
@@ -73,13 +74,17 @@ def readmsr(msr, from_bit=0, to_bit=63):
             print('[E] Unable to load the msr module.')
             sys.exit(1)
     try:
+        output = []
         for addr in msr_list:
             f = os.open(addr, os.O_RDONLY)
             os.lseek(f, msr, os.SEEK_SET)
             val = struct.unpack('Q', os.read(f, 8))[0]
             os.close(f)
             mask = sum(2**x for x in range(from_bit, to_bit + 1))
-            return (val & mask) >> from_bit
+            output.append((val & mask) >> from_bit)
+        if flatten:
+            return output[0] if len(set(output)) == 1 else output
+        return output[cpu] if cpu is not None else output
     except (IOError, OSError) as e:
         if e.errno == EPERM or e.errno == EACCES:
             print('[E] Unable to read from MSR. Try to disable Secure Boot.')
@@ -95,7 +100,7 @@ def is_on_battery():
 
 def calc_time_window_vars(t):
     # 0.000977 is the time unit of my CPU
-    time_unit = 1.0 / 2**readmsr(0x606, 16, 19)
+    time_unit = 1.0 / 2**readmsr(0x606, 16, 19, cpu=0)
     for Y in range(2**5):
         for Z in range(2**2):
             if t <= (2**Y) * (1. + Z / 4.) * time_unit:
@@ -152,11 +157,11 @@ def load_config():
 def calc_reg_values(config):
     regs = defaultdict(dict)
     for power_source in ('AC', 'BATTERY'):
-        if readmsr(0xce, 30, 30) != 1:
+        if readmsr(0xce, 30, 30, cpu=0) != 1:
             print("[W] Setting temperature target is not supported by this CPU")
         else:
             # the critical temperature for my CPU is 100 'C
-            critical_temp = readmsr(0x1a2, 16, 23)
+            critical_temp = readmsr(0x1a2, 16, 23, cpu=0)
             # update the allowed temp range to keep at least 3 'C from the CPU critical temperature
             global TRIP_TEMP_RANGE
             TRIP_TEMP_RANGE[1] = min(TRIP_TEMP_RANGE[1], critical_temp - 3)
@@ -165,7 +170,7 @@ def calc_reg_values(config):
             regs[power_source]['MSR_TEMPERATURE_TARGET'] = trip_offset << 24
 
         # 0.125 is the power unit of my CPU
-        power_unit = 1.0 / 2**readmsr(0x606, 0, 3)
+        power_unit = 1.0 / 2**readmsr(0x606, 0, 3, cpu=0)
         PL1 = int(round(config.getfloat(power_source, 'PL1_Tdp_W') / power_unit))
         Y, Z = calc_time_window_vars(config.getfloat(power_source, 'PL1_Duration_s'))
         TW1 = Y | (Z << 5)
@@ -180,7 +185,7 @@ def calc_reg_values(config):
         # cTDP
         c_tdp_target_value = config.getint(power_source, 'cTDP', fallback=None)
         if c_tdp_target_value is not None:
-            if readmsr(0xce, 33, 34) < 2:
+            if readmsr(0xce, 33, 34, cpu=0) < 2:
                 print("[W] cTDP setting not supported by this CPU")
             else:
                 valid_c_tdp_target_value = min(C_TDP_RANGE[1], max(C_TDP_RANGE[0], c_tdp_target_value))
