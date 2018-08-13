@@ -39,16 +39,16 @@ power = {'source': None, 'method': 'polling'}
 
 
 def writemsr(msr, val):
-    n = ['/dev/cpu/{:d}/msr'.format(x) for x in range(cpu_count())]
-    if not os.path.exists(n[0]):
+    msr_list = ['/dev/cpu/{:d}/msr'.format(x) for x in range(cpu_count())]
+    if not os.path.exists(msr_list[0]):
         try:
             subprocess.check_call(('modprobe', 'msr'))
         except subprocess.CalledProcessError:
             print('[E] Unable to load the msr module.')
             sys.exit(1)
     try:
-        for c in n:
-            f = os.open(c, os.O_WRONLY)
+        for addr in msr_list:
+            f = os.open(addr, os.O_WRONLY)
             os.lseek(f, msr, os.SEEK_SET)
             os.write(f, struct.pack('Q', val))
             os.close(f)
@@ -59,21 +59,22 @@ def writemsr(msr, val):
         else:
             raise e
 
+
 # returns the value between from_bit and to_bit as unsigned long
-def readmsr(msr, from_bit = 0, to_bit = 63):
+def readmsr(msr, from_bit=0, to_bit=63):
     if from_bit > to_bit:
-        print('wrong readmsr bit params')
+        print('[E] Wrong readmsr bit params')
         sys.exit(1)
-    n = ['/dev/cpu/{:d}/msr'.format(x) for x in range(cpu_count())]
-    if not os.path.exists(n[0]):
+    msr_list = ['/dev/cpu/{:d}/msr'.format(x) for x in range(cpu_count())]
+    if not os.path.exists(msr_list[0]):
         try:
             subprocess.check_call(('modprobe', 'msr'))
         except subprocess.CalledProcessError:
             print('[E] Unable to load the msr module.')
             sys.exit(1)
     try:
-        for c in n:
-            f = os.open(c, os.O_RDONLY)
+        for addr in msr_list:
+            f = os.open(addr, os.O_RDONLY)
             os.lseek(f, msr, os.SEEK_SET)
             val = struct.unpack('Q', os.read(f, 8))[0]
             os.close(f)
@@ -93,8 +94,8 @@ def is_on_battery():
 
 
 def calc_time_window_vars(t):
-    # 0.000977 is the time unit of this CPU
-    time_unit = 1.0/2**readmsr(0x606, 16, 19)
+    # 0.000977 is the time unit of my CPU
+    time_unit = 1.0 / 2**readmsr(0x606, 16, 19)
     for Y in range(2**5):
         for Z in range(2**2):
             if t <= (2**Y) * (1. + Z / 4.) * time_unit:
@@ -155,8 +156,8 @@ def calc_reg_values(config):
         trip_offset = int(round(100 - config.getfloat(power_source, 'Trip_Temp_C')))
         regs[power_source]['MSR_TEMPERATURE_TARGET'] = trip_offset << 24
 
-        # 0.125 is the power unit of this CPU
-        power_unit = 1.0/2**readmsr(0x606, 0, 3)
+        # 0.125 is the power unit of my CPU
+        power_unit = 1.0 / 2**readmsr(0x606, 0, 3)
         PL1 = int(round(config.getfloat(power_source, 'PL1_Tdp_W') / power_unit))
         Y, Z = calc_time_window_vars(config.getfloat(power_source, 'PL1_Duration_s'))
         TW1 = Y | (Z << 5)
@@ -196,7 +197,7 @@ def power_thread(config, regs, exit_event):
         sys.exit(1)
 
     while not exit_event.is_set():
-        #
+        # switch back to sysfs polling
         if power['method'] == 'polling':
             power['source'] = 'BATTERY' if is_on_battery() else 'AC'
 
