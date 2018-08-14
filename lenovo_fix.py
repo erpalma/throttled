@@ -202,7 +202,7 @@ def calc_reg_values(config):
 def set_hwp(pref):
     # set HWP energy performance hints
     assert pref in ('performance', 'balance_performance', 'default', 'balance_power', 'power')
-    CPUs = ['/sys/devices/system/cpu/{:d}/cpufreq/energy_performance_preference'.format(x) for x in range(cpu_count())]
+    CPUs = ['/sys/devices/system/cpu/cpu{:d}/cpufreq/energy_performance_preference'.format(x) for x in range(cpu_count())]
     for i, c in enumerate(CPUs):
         with open(c, 'wb') as f:
             f.write(pref.encode())
