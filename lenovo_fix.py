@@ -3,7 +3,6 @@
 import argparse
 import configparser
 import dbus
-import glob
 import os
 import psutil
 import struct
@@ -208,7 +207,7 @@ def set_hwp(pref):
             f.write(pref.encode())
         if args.debug:
             with open(c) as f:
-                print('[D] HWP for cpu{:d} - write {:s} - read {:s}'.format(i, pref, f.read()))
+                print('[D] HWP for cpu{:d} - write "{:s}" - read "{:s}"'.format(i, pref, f.read().strip()))
 
 
 def power_thread(config, regs, exit_event):
