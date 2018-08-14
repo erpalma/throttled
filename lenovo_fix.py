@@ -115,7 +115,9 @@ def undervolt(config):
             write_value &= 0xFFFFFFFF
             writemsr(0x150, 0x8000001000000000 | (VOLTAGE_PLANES[plane] << 40))
             read_value = readmsr(0x150, flatten=True)
-            print('[D] Undervolt plane {:s} - write {:#x} - read {:#x}'.format(plane, write_value, read_value))
+            match = write_value == read_value
+            print('[D] Undervolt plane {:s} - write {:#x} - read {:#x} - match {}'.format(
+                plane, write_value, read_value, match))
 
 
 def calc_undervolt_msr(plane, offset):
@@ -201,13 +203,17 @@ def calc_reg_values(config):
 def set_hwp(pref):
     # set HWP energy performance hints
     assert pref in ('performance', 'balance_performance', 'default', 'balance_power', 'power')
-    CPUs = ['/sys/devices/system/cpu/cpu{:d}/cpufreq/energy_performance_preference'.format(x) for x in range(cpu_count())]
+    CPUs = [
+        '/sys/devices/system/cpu/cpu{:d}/cpufreq/energy_performance_preference'.format(x) for x in range(cpu_count())
+    ]
     for i, c in enumerate(CPUs):
         with open(c, 'wb') as f:
             f.write(pref.encode())
         if args.debug:
             with open(c) as f:
-                print('[D] HWP for cpu{:d} - write "{:s}" - read "{:s}"'.format(i, pref, f.read().strip()))
+                read_value = f.read().strip()
+                match = pref == read_value
+                print('[D] HWP for cpu{:d} - write "{:s}" - read "{:s}" - match {}'.format(i, pref, read_value, match))
 
 
 def power_thread(config, regs, exit_event):
@@ -228,7 +234,9 @@ def power_thread(config, regs, exit_event):
             writemsr(0x1a2, write_value)
             if args.debug:
                 read_value = readmsr(0x1a2, 24, 29, flatten=True)
-                print('[D] TEMPERATURE_TARGET - write {:#x} - read {:#x}'.format(write_value >> 24, read_value))
+                match = write_value >> 24 == read_value
+                print('[D] TEMPERATURE_TARGET - write {:#x} - read {:#x} - match {}'.format(
+                    write_value >> 24, read_value, match))
 
         # set cTDP
         if 'MSR_CONFIG_TDP_CONTROL' in regs[power['source']]:
@@ -236,20 +244,26 @@ def power_thread(config, regs, exit_event):
             writemsr(0x64b, write_value)
             if args.debug:
                 read_value = readmsr(0x64b, 0, 1, flatten=True)
-                print('[D] CONFIG_TDP_CONTROL - write {:#x} - read {:#x}'.format(write_value, read_value))
+                match = write_value == read_value
+                print('[D] CONFIG_TDP_CONTROL - write {:#x} - read {:#x} - match {}'.format(
+                    write_value, read_value, match))
 
         # set PL1/2 on MSR
         write_value = regs[power['source']]['MSR_PKG_POWER_LIMIT']
         writemsr(0x610, write_value)
         if args.debug:
             read_value = readmsr(0x610, 0, 55, flatten=True)
-            print('[D] MSR PACKAGE_POWER_LIMIT - write {:#x} - read {:#x}'.format(write_value, read_value))
+            match = write_value == read_value
+            print('[D] MSR PACKAGE_POWER_LIMIT - write {:#x} - read {:#x} - match {}'.format(
+                write_value, read_value, match))
         # set MCHBAR register to the same PL1/2 values
         mchbar_mmio.write32(0, write_value & 0xffffffff)
         mchbar_mmio.write32(4, write_value >> 32)
         if args.debug:
             read_value = mchbar_mmio.read32(0) | (mchbar_mmio.read32(4) << 32)
-            print('[D] MCHBAR PACKAGE_POWER_LIMIT - write {:#x} - read {:#x}'.format(write_value, read_value))
+            match = write_value == read_value
+            print('[D] MCHBAR PACKAGE_POWER_LIMIT - write {:#x} - read {:#x} - match {}'.format(
+                write_value, read_value, match))
 
         wait_t = config.getfloat(power['source'], 'Update_Rate_s')
         enable_hwp_mode = config.getboolean('AC', 'HWP_Mode', fallback=False)
