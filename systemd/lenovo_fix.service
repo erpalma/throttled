@@ -4,6 +4,8 @@ Description=Stop Intel throttling
 [Service]
 Type=simple
 ExecStart=/opt/lenovo_fix/venv/bin/python3 /opt/lenovo_fix/lenovo_fix.py
+StandardOutput=syslog
+StandardError=syslog
 
 [Install]
 WantedBy=multi-user.target
