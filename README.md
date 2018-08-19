@@ -72,6 +72,14 @@ sudo ./install.sh
 ```
 Feedback about Fedora installation is welcome.
 
+### openSUSE
+User *brycecordill* reported that the following dependecies are required for installing in openSUSE. I guess that python2 dependecies can be safely dropped. I would really appreciate any feedback from openSUSE users.
+```
+zypper install gcc python2-pip pyton3-devel python-devel dbus1-glib-devel python3-cairo-devel cairo-devel python2-cairo-devel python3-gobject-cairo gobject-introspection-devel python-virtualenv 
+git clone https://github.com/erpalma/lenovo-throttling-fix.git
+sudo ./install.sh
+```
+
 ## Configuration
 The configuration has moved to `/etc/lenovo_fix.conf`. Makefile does not overwrite your previous config file, so you need to manually check for differences in config file structure when updating the tool. If you want to overwrite the config with new defaults just issue `sudo cp etc/lenovo_fix.conf /etc`. There exist two profiles `AC` and `BATTERY` and the script can be totally disabled by setting `Enabled: False` in the `GENERAL` section. Undervolt is applied if any voltage plane in the config file (section UNDERVOLT) was set. Notice that the offset is in *mV* and only undervolting (*i.e.* negative values) is supported.
 All fields accept floating point values as well as integers.
