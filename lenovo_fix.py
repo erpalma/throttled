@@ -32,9 +32,42 @@ VOLTAGE_PLANES = {
 }
 
 TRIP_TEMP_RANGE = [40, 97]
-C_TDP_RANGE = (0, 2)
 
 power = {'source': None, 'method': 'polling'}
+
+platform_info_bits = {
+                        'maximum_non_turbo_ratio': [8, 15],
+                        'maximum_efficiency_ratio': [40, 47],
+                        'minimum_operating_ratio': [48, 55],
+                        'feature_ppin_cap': [23, 23],
+                        'feature_programmable_turbo_ratio': [28, 28],
+                        'feature_programmable_tdp_limit': [29, 29],
+                        'number_of_additional_tdp_profiles': [33, 34],
+                        'feature_programmable_temperature_target': [30, 30],
+                        'feature_low_power_mode': [32, 32]
+                     }
+
+thermal_status_bits =   {
+                            'thermal_limit_status': [0, 0],
+                            'thermal_limit_log': [1, 1],
+                            'prochot_or_forcepr_status': [2, 2],
+                            'prochot_or_forcepr_log': [3, 3],
+                            'crit_temp_status': [4, 4],
+                            'crit_temp_log': [5, 5],
+                            'thermal_threshold1_status': [6, 6],
+                            'thermal_threshold1_log': [7, 7],
+                            'thermal_threshold2_status': [8, 8],
+                            'thermal_threshold2_log': [9, 9],
+                            'power_limit_status': [10, 10],
+                            'power_limit_log': [11, 11],
+                            'current_limit_status': [12, 12],
+                            'current_limit_log': [13, 13],
+                            'cross_domain_limit_status': [14, 14],
+                            'cross_domain_limit_log': [15, 15],
+                            'cpu_temp': [16, 22],
+                            'temp_resolution': [27, 30],
+                            'reading_valid': [31, 31],
+                        }
 
 
 def writemsr(msr, val):
@@ -79,8 +112,7 @@ def readmsr(msr, from_bit=0, to_bit=63, cpu=None, flatten=False):
             os.lseek(f, msr, os.SEEK_SET)
             val = struct.unpack('Q', os.read(f, 8))[0]
             os.close(f)
-            mask = sum(2**x for x in range(from_bit, to_bit + 1))
-            output.append((val & mask) >> from_bit)
+            output.append(get_value_for_bits(val, from_bit, to_bit))
         if flatten:
             return output[0] if len(set(output)) == 1 else output
         return output[cpu] if cpu is not None else output
@@ -91,15 +123,55 @@ def readmsr(msr, from_bit=0, to_bit=63, cpu=None, flatten=False):
         else:
             raise e
 
+def get_value_for_bits(val, from_bit=0, to_bit=63):
+    mask = sum(2**x for x in range(from_bit, to_bit + 1))
+    return (val & mask) >> from_bit
 
 def is_on_battery():
     with open(SYSFS_POWER_PATH) as f:
         return not bool(int(f.read()))
 
+def get_cpu_platform_info():
+    features_msr_value = readmsr(0xce, cpu=0)
+    cpu_platform_info = {}
+    for key, value in platform_info_bits.items():
+        cpu_platform_info[key] = int(get_value_for_bits(features_msr_value, value[0], value[1]))
+    return cpu_platform_info
+
+
+def get_reset_thermal_status():
+    #read thermal status
+    thermal_status_msr_value = readmsr(0x19c)
+    thermal_status = []
+    for core in range(cpu_count()):
+        thermal_status_core = {}
+        for key, value in thermal_status_bits.items():
+            thermal_status_core[key] = int(get_value_for_bits(thermal_status_msr_value[core], value[0], value[1]))
+        thermal_status.append(thermal_status_core)
+    #reset log bits
+    writemsr(0x19c, 0)
+    return thermal_status
+
+
+def get_time_unit():
+    # 0.000977 is the time unit of my CPU
+    # TODO formula might be different for other CPUs
+    return 1.0 / 2**readmsr(0x606, 16, 19, cpu=0)
+
+
+def get_power_unit():
+    # 0.125 is the power unit of my CPU
+    # TODO formula might be different for other CPUs
+    return 1.0 / 2**readmsr(0x606, 0, 3, cpu=0)
+
+
+def get_critical_temp():
+    # the critical temperature for my CPU is 100 'C
+    return readmsr(0x1a2, 16, 23, cpu=0)
+
 
 def calc_time_window_vars(t):
-    # 0.000977 is the time unit of my CPU
-    time_unit = 1.0 / 2**readmsr(0x606, 16, 19, cpu=0)
+    time_unit = get_time_unit()
     for Y in range(2**5):
         for Z in range(2**2):
             if t <= (2**Y) * (1. + Z / 4.) * time_unit:
@@ -161,14 +233,14 @@ def load_config():
     return config
 
 
-def calc_reg_values(config):
+def calc_reg_values(platform_info, config):
     regs = defaultdict(dict)
     for power_source in ('AC', 'BATTERY'):
-        if readmsr(0xce, 30, 30, cpu=0) != 1:
+        if platform_info['feature_programmable_temperature_target'] != 1:
             print("[W] Setting temperature target is not supported by this CPU")
         else:
             # the critical temperature for my CPU is 100 'C
-            critical_temp = readmsr(0x1a2, 16, 23, cpu=0)
+            critical_temp = get_critical_temp()
             # update the allowed temp range to keep at least 3 'C from the CPU critical temperature
             global TRIP_TEMP_RANGE
             TRIP_TEMP_RANGE[1] = min(TRIP_TEMP_RANGE[1], critical_temp - 3)
@@ -176,8 +248,7 @@ def calc_reg_values(config):
             trip_offset = int(round(critical_temp - config.getfloat(power_source, 'Trip_Temp_C')))
             regs[power_source]['MSR_TEMPERATURE_TARGET'] = trip_offset << 24
 
-        # 0.125 is the power unit of my CPU
-        power_unit = 1.0 / 2**readmsr(0x606, 0, 3, cpu=0)
+        power_unit = get_power_unit()
         PL1 = int(round(config.getfloat(power_source, 'PL1_Tdp_W') / power_unit))
         Y, Z = calc_time_window_vars(config.getfloat(power_source, 'PL1_Duration_s'))
         TW1 = Y | (Z << 5)
@@ -192,10 +263,12 @@ def calc_reg_values(config):
         # cTDP
         c_tdp_target_value = config.getint(power_source, 'cTDP', fallback=None)
         if c_tdp_target_value is not None:
-            if readmsr(0xce, 33, 34, cpu=0) < 2:
+            if platform_info['feature_programmable_tdp_limit'] != 1:
                 print("[W] cTDP setting not supported by this CPU")
+            elif platform_info['number_of_additional_tdp_profiles'] < c_tdp_target_value:
+                print("[W] the configured cTDP profile is not supported by this CPU")
             else:
-                valid_c_tdp_target_value = min(C_TDP_RANGE[1], max(C_TDP_RANGE[0], c_tdp_target_value))
+                valid_c_tdp_target_value = max(0, c_tdp_target_value)
                 regs[power_source]['MSR_CONFIG_TDP_CONTROL'] = valid_c_tdp_target_value
     return regs
 
@@ -224,6 +297,14 @@ def power_thread(config, regs, exit_event):
         sys.exit(1)
 
     while not exit_event.is_set():
+        #print thermal status
+        if args.debug:
+            thermal_status = get_reset_thermal_status()
+            for index, core_thermal_status in enumerate(thermal_status):
+                for key, value in core_thermal_status.items():
+                    print('[D] core {} thermal status: {} = {}'.format(
+                        index, key.replace("_", " "), value))
+
         # switch back to sysfs polling
         if power['method'] == 'polling':
             power['source'] = 'BATTERY' if is_on_battery() else 'AC'
@@ -293,7 +374,12 @@ def main():
     power['source'] = 'BATTERY' if is_on_battery() else 'AC'
 
     config = load_config()
-    regs = calc_reg_values(config)
+    platform_info = get_cpu_platform_info()
+    if args.debug:
+        for key, value in platform_info.items():
+            print('[D] cpu platform info: {} = {}'.format(
+                key.replace("_", " "), value))
+    regs = calc_reg_values(platform_info, config)
 
     if not config.getboolean('GENERAL', 'Enabled'):
         return
