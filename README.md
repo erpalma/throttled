@@ -101,9 +101,19 @@ ANALOGIO: 0
 **IMPORTANT:** Please notice that *my* system is stable with these values. Your notebook might crash even with slight undervolting! You should test your system and slowly incresing undervolt to find the maximum stable value for your CPU. You can check [this](https://www.notebookcheck.net/Intel-Extreme-Tuning-Utility-XTU-Undervolting-Guide.272120.0.html) tutorial if you don't know where to start.
 
 ## Debug
-You can enable the `--debug` option to read back written values and check if the script is working properly. This is an example output:
+You can enable the `--debug` option to read back written values and check if the script is working properly. At the statup it will also show the CPUs platform info which contains information about multiplier values and features present for this CPU. Additionally the script will print the thermal status per core which is handy when it comes to figuring out the reason for CPU throttle. Status fields stands for the current throttle reason or condition and log shows if this was a throttle reason since the last interval.
+This is an example output:
 ```
 ./lenovo_fix.py --debug
+[D] cpu platform info: maximum non turbo ratio = 20
+[D] cpu platform info: maximum efficiency ratio = 4
+[D] cpu platform info: minimum operating ratio = 4
+[D] cpu platform info: feature ppin cap = 0
+[D] cpu platform info: feature programmable turbo ratio = 1
+[D] cpu platform info: feature programmable tdp limit = 1
+[D] cpu platform info: number of additional tdp profiles = 2
+[D] cpu platform info: feature programmable temperature target = 1
+[D] cpu platform info: feature low power mode = 1
 [D] TEMPERATURE_TARGET - write 0xf - read 0xf
 [D] Undervolt plane CORE - write 0xf2800000 - read 0xf2800000
 [D] Undervolt plane GPU - write 0xf5200000 - read 0xf5200000
@@ -113,6 +123,26 @@ You can enable the `--debug` option to read back written values and check if the
 [D] MSR PACKAGE_POWER_LIMIT - write 0xcc816000dc80e8 - read 0xcc816000dc80e8
 [D] MCHBAR PACKAGE_POWER_LIMIT - write 0xcc816000dc80e8 - read 0xcc816000dc80e8
 [D] TEMPERATURE_TARGET - write 0xf - read 0xf
+[D] core 0 thermal status: thermal throttle status = 0
+[D] core 0 thermal status: thermal throttle log = 1
+[D] core 0 thermal status: prochot or forcepr event = 0
+[D] core 0 thermal status: prochot or forcepr log = 0
+[D] core 0 thermal status: crit temp status = 0
+[D] core 0 thermal status: crit temp log = 0
+[D] core 0 thermal status: thermal threshold1 status = 0
+[D] core 0 thermal status: thermal threshold1 log = 1
+[D] core 0 thermal status: thermal threshold2 status = 0
+[D] core 0 thermal status: thermal threshold2 log = 1
+[D] core 0 thermal status: power limit status = 0
+[D] core 0 thermal status: power limit log = 1
+[D] core 0 thermal status: current limit status = 0
+[D] core 0 thermal status: current limit log = 0
+[D] core 0 thermal status: cross domain limit status = 0
+[D] core 0 thermal status: cross domain limit log = 0
+[D] core 0 thermal status: cpu temp = 44
+[D] core 0 thermal status: temp resolution = 1
+[D] core 0 thermal status: reading valid = 1
+.....
 ```
 
 ## Disclaimer
