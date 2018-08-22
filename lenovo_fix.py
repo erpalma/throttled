@@ -36,38 +36,38 @@ TRIP_TEMP_RANGE = [40, 97]
 power = {'source': None, 'method': 'polling'}
 
 platform_info_bits = {
-                        'maximum_non_turbo_ratio': [8, 15],
-                        'maximum_efficiency_ratio': [40, 47],
-                        'minimum_operating_ratio': [48, 55],
-                        'feature_ppin_cap': [23, 23],
-                        'feature_programmable_turbo_ratio': [28, 28],
-                        'feature_programmable_tdp_limit': [29, 29],
-                        'number_of_additional_tdp_profiles': [33, 34],
-                        'feature_programmable_temperature_target': [30, 30],
-                        'feature_low_power_mode': [32, 32]
-                     }
+    'maximum_non_turbo_ratio': [8, 15],
+    'maximum_efficiency_ratio': [40, 47],
+    'minimum_operating_ratio': [48, 55],
+    'feature_ppin_cap': [23, 23],
+    'feature_programmable_turbo_ratio': [28, 28],
+    'feature_programmable_tdp_limit': [29, 29],
+    'number_of_additional_tdp_profiles': [33, 34],
+    'feature_programmable_temperature_target': [30, 30],
+    'feature_low_power_mode': [32, 32]
+}
 
-thermal_status_bits =   {
-                            'thermal_limit_status': [0, 0],
-                            'thermal_limit_log': [1, 1],
-                            'prochot_or_forcepr_status': [2, 2],
-                            'prochot_or_forcepr_log': [3, 3],
-                            'crit_temp_status': [4, 4],
-                            'crit_temp_log': [5, 5],
-                            'thermal_threshold1_status': [6, 6],
-                            'thermal_threshold1_log': [7, 7],
-                            'thermal_threshold2_status': [8, 8],
-                            'thermal_threshold2_log': [9, 9],
-                            'power_limit_status': [10, 10],
-                            'power_limit_log': [11, 11],
-                            'current_limit_status': [12, 12],
-                            'current_limit_log': [13, 13],
-                            'cross_domain_limit_status': [14, 14],
-                            'cross_domain_limit_log': [15, 15],
-                            'cpu_temp': [16, 22],
-                            'temp_resolution': [27, 30],
-                            'reading_valid': [31, 31],
-                        }
+thermal_status_bits = {
+    'thermal_limit_status': [0, 0],
+    'thermal_limit_log': [1, 1],
+    'prochot_or_forcepr_status': [2, 2],
+    'prochot_or_forcepr_log': [3, 3],
+    'crit_temp_status': [4, 4],
+    'crit_temp_log': [5, 5],
+    'thermal_threshold1_status': [6, 6],
+    'thermal_threshold1_log': [7, 7],
+    'thermal_threshold2_status': [8, 8],
+    'thermal_threshold2_log': [9, 9],
+    'power_limit_status': [10, 10],
+    'power_limit_log': [11, 11],
+    'current_limit_status': [12, 12],
+    'current_limit_log': [13, 13],
+    'cross_domain_limit_status': [14, 14],
+    'cross_domain_limit_log': [15, 15],
+    'cpu_temp': [16, 22],
+    'temp_resolution': [27, 30],
+    'reading_valid': [31, 31],
+}
 
 
 def writemsr(msr, val):
@@ -123,13 +123,16 @@ def readmsr(msr, from_bit=0, to_bit=63, cpu=None, flatten=False):
         else:
             raise e
 
+
 def get_value_for_bits(val, from_bit=0, to_bit=63):
     mask = sum(2**x for x in range(from_bit, to_bit + 1))
     return (val & mask) >> from_bit
 
+
 def is_on_battery():
     with open(SYSFS_POWER_PATH) as f:
         return not bool(int(f.read()))
+
 
 def get_cpu_platform_info():
     features_msr_value = readmsr(0xce, cpu=0)
@@ -302,8 +305,7 @@ def power_thread(config, regs, exit_event):
             thermal_status = get_reset_thermal_status()
             for index, core_thermal_status in enumerate(thermal_status):
                 for key, value in core_thermal_status.items():
-                    print('[D] core {} thermal status: {} = {}'.format(
-                        index, key.replace("_", " "), value))
+                    print('[D] core {} thermal status: {} = {}'.format(index, key.replace("_", " "), value))
 
         # switch back to sysfs polling
         if power['method'] == 'polling':
@@ -377,8 +379,7 @@ def main():
     platform_info = get_cpu_platform_info()
     if args.debug:
         for key, value in platform_info.items():
-            print('[D] cpu platform info: {} = {}'.format(
-                key.replace("_", " "), value))
+            print('[D] cpu platform info: {} = {}'.format(key.replace("_", " "), value))
     regs = calc_reg_values(platform_info, config)
 
     if not config.getboolean('GENERAL', 'Enabled'):
