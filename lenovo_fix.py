@@ -12,14 +12,10 @@ import sys
 from collections import defaultdict
 from dbus.mainloop.glib import DBusGMainLoop
 from errno import EACCES, EPERM
+from gi.repository import GLib
 from mmio import MMIO, MMIOError
 from multiprocessing import cpu_count
 from threading import Event, Thread
-
-try:
-    from gi.repository import GObject
-except ImportError:
-    import gobject as GObject
 
 SYSFS_POWER_PATH = '/sys/class/power_supply/AC/online'
 
@@ -418,8 +414,7 @@ def main():
         path="/org/freedesktop/UPower/devices/line_power_AC")
 
     try:
-        GObject.threads_init()
-        loop = GObject.MainLoop()
+        loop = GLib.MainLoop()
         loop.run()
     except (KeyboardInterrupt, SystemExit):
         pass
