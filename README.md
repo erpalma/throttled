@@ -75,7 +75,7 @@ Feedback about Fedora installation is welcome.
 ### openSUSE
 User *brycecordill* reported that the following dependecies are required for installing in openSUSE. I guess that python2 dependecies can be safely dropped. I would really appreciate any feedback from openSUSE users.
 ```
-zypper install gcc python2-pip pyton3-devel python-devel dbus1-glib-devel python3-cairo-devel cairo-devel python2-cairo-devel python3-gobject-cairo gobject-introspection-devel python-virtualenv 
+zypper install gcc python2-pip python3-devel python-devel dbus-1-glib-devel python3-cairo-devel cairo-devel python2-cairo-devel python3-gobject-cairo gobject-introspection-devel python-virtualenv 
 git clone https://github.com/erpalma/lenovo-throttling-fix.git
 sudo ./install.sh
 ```
