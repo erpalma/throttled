@@ -11,6 +11,7 @@ Other users have confirmed that the script is also working for these laptops:
 - Lenovo X1C6
 - Lenovo T580
 - Lenovo L480
+- Lenovo T470
 - Dell XPS 9370
 
 I will keep this list updated.
