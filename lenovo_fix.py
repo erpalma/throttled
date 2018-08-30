@@ -66,6 +66,17 @@ thermal_status_bits = {
 }
 
 
+class bcolors:
+    GREEN = '\033[92m'
+    RED = '\033[91m'
+    RESET = '\033[0m'
+    BOLD = '\033[1m'
+
+
+OK = bcolors.GREEN + bcolors.BOLD + 'OK' + bcolors.RESET
+ERR = bcolors.RED + bcolors.BOLD + 'ERR' + bcolors.RESET
+
+
 def writemsr(msr, val):
     msr_list = ['/dev/cpu/{:d}/msr'.format(x) for x in range(cpu_count())]
     if not os.path.exists(msr_list[0]):
@@ -207,7 +218,7 @@ def undervolt(config):
             writemsr(0x150, 0x8000001000000000 | (VOLTAGE_PLANES[plane] << 40))
             read_value = readmsr(0x150, flatten=True)
             read_offset_mv = calc_undervolt_mv(read_value)
-            match = write_value == read_value
+            match = OK if write_value == read_value else ERR
             print('[D] Undervolt plane {:s} - write {:.0f} mV ({:#x}) - read {:.0f} mV ({:#x}) - match {}'.format(
                 plane, write_offset_mv, write_value, read_offset_mv, read_value, match))
 
@@ -297,7 +308,7 @@ def set_hwp(pref):
         if args.debug:
             with open(c) as f:
                 read_value = f.read().strip()
-                match = pref == read_value
+                match = OK if pref == read_value else ERR
                 print('[D] HWP for cpu{:d} - write "{:s}" - read "{:s}" - match {}'.format(i, pref, read_value, match))
 
 
@@ -326,7 +337,7 @@ def power_thread(config, regs, exit_event):
             writemsr(0x1a2, write_value)
             if args.debug:
                 read_value = readmsr(0x1a2, 24, 29, flatten=True)
-                match = write_value >> 24 == read_value
+                match = OK if write_value >> 24 == read_value else ERR
                 print('[D] TEMPERATURE_TARGET - write {:#x} - read {:#x} - match {}'.format(
                     write_value >> 24, read_value, match))
 
@@ -336,7 +347,7 @@ def power_thread(config, regs, exit_event):
             writemsr(0x64b, write_value)
             if args.debug:
                 read_value = readmsr(0x64b, 0, 1, flatten=True)
-                match = write_value == read_value
+                match = OK if write_value == read_value else ERR
                 print('[D] CONFIG_TDP_CONTROL - write {:#x} - read {:#x} - match {}'.format(
                     write_value, read_value, match))
 
@@ -345,7 +356,7 @@ def power_thread(config, regs, exit_event):
         writemsr(0x610, write_value)
         if args.debug:
             read_value = readmsr(0x610, 0, 55, flatten=True)
-            match = write_value == read_value
+            match = OK if write_value == read_value else ERR
             print('[D] MSR PACKAGE_POWER_LIMIT - write {:#x} - read {:#x} - match {}'.format(
                 write_value, read_value, match))
         # set MCHBAR register to the same PL1/2 values
@@ -353,7 +364,7 @@ def power_thread(config, regs, exit_event):
         mchbar_mmio.write32(4, write_value >> 32)
         if args.debug:
             read_value = mchbar_mmio.read32(0) | (mchbar_mmio.read32(4) << 32)
-            match = write_value == read_value
+            match = OK if write_value == read_value else ERR
             print('[D] MCHBAR PACKAGE_POWER_LIMIT - write {:#x} - read {:#x} - match {}'.format(
                 write_value, read_value, match))
 
