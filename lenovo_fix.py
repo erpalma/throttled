@@ -178,25 +178,38 @@ def calc_time_window_vars(t):
     raise ValueError('Unable to find a good combination!')
 
 
-def undervolt(config):
-    for plane in VOLTAGE_PLANES:
-        write_value = calc_undervolt_msr(plane, config.getfloat('UNDERVOLT', plane))
-        writemsr(0x150, write_value)
-        if args.debug:
-            write_value &= 0xFFFFFFFF
-            writemsr(0x150, 0x8000001000000000 | (VOLTAGE_PLANES[plane] << 40))
-            read_value = readmsr(0x150, flatten=True)
-            match = write_value == read_value
-            print('[D] Undervolt plane {:s} - write {:#x} - read {:#x} - match {}'.format(
-                plane, write_value, read_value, match))
-
-
 def calc_undervolt_msr(plane, offset):
+    """Return the value to be written in the MSR 150h for setting the given
+    offset voltage (in mV) to the given voltage plane.
+    """
     assert offset <= 0
     assert plane in VOLTAGE_PLANES
     offset = int(round(offset * 1.024))
     offset = 0xFFE00000 & ((offset & 0xFFF) << 21)
     return 0x8000001100000000 | (VOLTAGE_PLANES[plane] << 40) | offset
+
+
+def calc_undervolt_mv(msr_value):
+    """Return the offset voltage (in mV) from the given raw MSR 150h value.
+    """
+    offset = (msr_value & 0xFFE00000) >> 21
+    offset = offset if offset <= 0x400 else -(0x800 - offset)
+    return int(round(offset / 1.024))
+
+
+def undervolt(config):
+    for plane in VOLTAGE_PLANES:
+        write_offset_mv = config.getfloat('UNDERVOLT', plane)
+        write_value = calc_undervolt_msr(plane, write_offset_mv)
+        writemsr(0x150, write_value)
+        if args.debug:
+            write_value &= 0xFFFFFFFF
+            writemsr(0x150, 0x8000001000000000 | (VOLTAGE_PLANES[plane] << 40))
+            read_value = readmsr(0x150, flatten=True)
+            read_offset_mv = calc_undervolt_mv(read_value)
+            match = write_value == read_value
+            print('[D] Undervolt plane {:s} - write {:.0f} mV ({:#x}) - read {:.0f} mV ({:#x}) - match {}'.format(
+                plane, write_offset_mv, write_value, read_offset_mv, read_value, match))
 
 
 def load_config():
