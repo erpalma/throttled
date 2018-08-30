@@ -66,7 +66,7 @@ sudo systemctl disable thermald.service
 
 ### Fedora
 ```
-dnf install cairo-gobject-devel gobject-introspection-devel dbus-glib-devel python-virtualenv
+dnf install cairo-gobject-devel gobject-introspection-devel dbus-glib-devel python-virtualenv python3-devel
 git clone https://github.com/erpalma/lenovo-throttling-fix.git
 sudo ./install.sh
 ```
