@@ -3,6 +3,7 @@
 import argparse
 import configparser
 import dbus
+import glob
 import os
 import psutil
 import struct
@@ -17,7 +18,7 @@ from mmio import MMIO, MMIOError
 from multiprocessing import cpu_count
 from threading import Event, Thread
 
-SYSFS_POWER_PATH = '/sys/class/power_supply/AC/online'
+DEFAULT_SYSFS_POWER_PATH = '/sys/class/power_supply/AC*/online'
 
 VOLTAGE_PLANES = {
     'CORE': 0,
@@ -136,9 +137,15 @@ def get_value_for_bits(val, from_bit=0, to_bit=63):
     return (val & mask) >> from_bit
 
 
-def is_on_battery():
-    with open(SYSFS_POWER_PATH) as f:
-        return not bool(int(f.read()))
+def is_on_battery(config):
+    try:
+        for path in glob.glob(config.get('Sysfs_Power_Path', 'GENERAL', fallback=DEFAULT_SYSFS_POWER_PATH)):
+            with open(path) as f:
+                return not bool(int(f.read()))
+    except:
+        pass
+    print('[E] No valid Sysfs_Power_Path found!')
+    sys.exit(1)
 
 
 def get_cpu_platform_info():
@@ -150,7 +157,7 @@ def get_cpu_platform_info():
 
 
 def get_reset_thermal_status():
-    #read thermal status
+    # read thermal status
     thermal_status_msr_value = readmsr(0x19c)
     thermal_status = []
     for core in range(cpu_count()):
@@ -158,7 +165,7 @@ def get_reset_thermal_status():
         for key, value in thermal_status_bits.items():
             thermal_status_core[key] = int(get_value_for_bits(thermal_status_msr_value[core], value[0], value[1]))
         thermal_status.append(thermal_status_core)
-    #reset log bits
+    # reset log bits
     writemsr(0x19c, 0)
     return thermal_status
 
@@ -329,7 +336,7 @@ def power_thread(config, regs, exit_event):
 
         # switch back to sysfs polling
         if power['method'] == 'polling':
-            power['source'] = 'BATTERY' if is_on_battery() else 'AC'
+            power['source'] = 'BATTERY' if is_on_battery(config) else 'AC'
 
         # set temperature trip point
         if 'MSR_TEMPERATURE_TARGET' in regs[power['source']]:
@@ -375,7 +382,7 @@ def power_thread(config, regs, exit_event):
             # set full performance mode only when load is greater than this threshold (~ at least 1 core full speed)
             performance_mode = cpu_usage > 100. / (cpu_count() * 1.25)
             # check again if we are on AC, since in the meantime we might have switched to BATTERY
-            if not is_on_battery():
+            if not is_on_battery(config):
                 set_hwp('performance' if performance_mode else 'balance_performance')
         else:
             exit_event.wait(wait_t)
@@ -393,9 +400,9 @@ def main():
     parser.add_argument('--config', default='/etc/lenovo_fix.conf', help='override default config file path')
     args = parser.parse_args()
 
-    power['source'] = 'BATTERY' if is_on_battery() else 'AC'
-
     config = load_config()
+    power['source'] = 'BATTERY' if is_on_battery(config) else 'AC'
+
     platform_info = get_cpu_platform_info()
     if args.debug:
         for key, value in platform_info.items():
