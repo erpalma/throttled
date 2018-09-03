@@ -187,6 +187,16 @@ def get_critical_temp():
     return readmsr(0x1a2, 16, 23, cpu=0)
 
 
+def get_cur_pkg_power_limits():
+    value = readmsr(0x610, 0, 55, flatten=True)
+    return {
+        'PL1': get_value_for_bits(value, 0, 14),
+        'TW1': get_value_for_bits(value, 17, 23),
+        'PL2': get_value_for_bits(value, 32, 46),
+        'TW2': get_value_for_bits(value, 49, 55),
+    }
+
+
 def calc_time_window_vars(t):
     time_unit = get_time_unit()
     for Y in range(2**5):
@@ -217,7 +227,7 @@ def calc_undervolt_mv(msr_value):
 
 def undervolt(config):
     for plane in VOLTAGE_PLANES:
-        write_offset_mv = config.getfloat('UNDERVOLT', plane)
+        write_offset_mv = config.getfloat('UNDERVOLT', plane, fallback=0.)
         write_value = calc_undervolt_msr(plane, write_offset_mv)
         writemsr(0x150, write_value)
         if args.debug:
@@ -243,14 +253,20 @@ def load_config():
                 'PL2_Tdp_W',
                 'PL2_Duration_S',
         ):
-            config.set(power_source, option, str(max(0.1, config.getfloat(power_source, option))))
+            value = config.getfloat(power_source, option, fallback=None)
+            if value is not None:
+                value = config.set(power_source, option, str(max(0.1, value)))
+            elif option == 'Update_Rate_s':
+                print('[E] The mandatory "Update_Rate_s" parameter is missing.')
+                sys.exit(1)
 
-        trip_temp = config.getfloat(power_source, 'Trip_Temp_C')
-        valid_trip_temp = min(TRIP_TEMP_RANGE[1], max(TRIP_TEMP_RANGE[0], trip_temp))
-        if trip_temp != valid_trip_temp:
-            config.set(power_source, 'Trip_Temp_C', str(valid_trip_temp))
-            print('[!] Overriding invalid "Trip_Temp_C" value in "{:s}": {:.1f} -> {:.1f}'.format(
-                power_source, trip_temp, valid_trip_temp))
+        trip_temp = config.getfloat(power_source, 'Trip_Temp_C', fallback=None)
+        if trip_temp is not None:
+            valid_trip_temp = min(TRIP_TEMP_RANGE[1], max(TRIP_TEMP_RANGE[0], trip_temp))
+            if trip_temp != valid_trip_temp:
+                config.set(power_source, 'Trip_Temp_C', str(valid_trip_temp))
+                print('[!] Overriding invalid "Trip_Temp_C" value in "{:s}": {:.1f} -> {:.1f}'.format(
+                    power_source, trip_temp, valid_trip_temp))
 
     for plane in VOLTAGE_PLANES:
         value = config.getfloat('UNDERVOLT', plane)
@@ -275,20 +291,52 @@ def calc_reg_values(platform_info, config):
             global TRIP_TEMP_RANGE
             TRIP_TEMP_RANGE[1] = min(TRIP_TEMP_RANGE[1], critical_temp - 3)
 
-            trip_offset = int(round(critical_temp - config.getfloat(power_source, 'Trip_Temp_C')))
-            regs[power_source]['MSR_TEMPERATURE_TARGET'] = trip_offset << 24
+            Trip_Temp_C = config.getfloat(power_source, 'Trip_Temp_C', fallback=None)
+            if Trip_Temp_C is not None:
+                trip_offset = int(round(critical_temp - Trip_Temp_C))
+                regs[power_source]['MSR_TEMPERATURE_TARGET'] = trip_offset << 24
+            else:
+                print('[I] {:s} trip temperature is disabled in config.'.format(power_source))
 
         power_unit = get_power_unit()
-        PL1 = int(round(config.getfloat(power_source, 'PL1_Tdp_W') / power_unit))
-        Y, Z = calc_time_window_vars(config.getfloat(power_source, 'PL1_Duration_s'))
-        TW1 = Y | (Z << 5)
 
-        PL2 = int(round(config.getfloat(power_source, 'PL2_Tdp_W') / power_unit))
-        Y, Z = calc_time_window_vars(config.getfloat(power_source, 'PL2_Duration_s'))
-        TW2 = Y | (Z << 5)
+        PL1_Tdp_W = config.getfloat(power_source, 'PL1_Tdp_W', fallback=None)
+        PL1_Duration_s = config.getfloat(power_source, 'PL1_Duration_s', fallback=None)
+        PL2_Tdp_W = config.getfloat(power_source, 'PL2_Tdp_W', fallback=None)
+        PL2_Duration_s = config.getfloat(power_source, 'PL2_Duration_s', fallback=None)
 
-        regs[power_source]['MSR_PKG_POWER_LIMIT'] = PL1 | (1 << 15) | (TW1 << 17) | (PL2 << 32) | (1 << 47) | (
-            TW2 << 49)
+        if (PL1_Tdp_W, PL1_Duration_s, PL2_Tdp_W, PL2_Duration_s).count(None) < 4:
+            cur_pkg_power_limits = get_cur_pkg_power_limits()
+            if PL1_Tdp_W is None:
+                PL1 = cur_pkg_power_limits['PL1']
+                print('[I] {:s} PL1_Tdp_W disabled in config.'.format(power_source))
+            else:
+                PL1 = int(round(PL1_Tdp_W / power_unit))
+
+            if PL1_Duration_s is None:
+                TW1 = cur_pkg_power_limits['TW1']
+                print('[I] {:s} PL1_Duration_s disabled in config.'.format(power_source))
+            else:
+                Y, Z = calc_time_window_vars(PL1_Duration_s)
+                TW1 = Y | (Z << 5)
+
+            if PL2_Tdp_W is None:
+                PL2 = cur_pkg_power_limits['PL2']
+                print('[I] {:s} PL2_Tdp_W disabled in config.'.format(power_source))
+            else:
+                PL2 = int(round(PL2_Tdp_W / power_unit))
+
+            if PL2_Duration_s is None:
+                TW2 = cur_pkg_power_limits['TW2']
+                print('[I] {:s} PL2_Duration_s disabled in config.'.format(power_source))
+            else:
+                Y, Z = calc_time_window_vars(PL2_Duration_s)
+                TW2 = Y | (Z << 5)
+
+            regs[power_source]['MSR_PKG_POWER_LIMIT'] = PL1 | (1 << 15) | (TW1 << 17) | (PL2 << 32) | (1 << 47) | (
+                TW2 << 49)
+        else:
+            print('[I] {:s} package power limits are disabled in config.'.format(power_source))
 
         # cTDP
         c_tdp_target_value = config.getint(power_source, 'cTDP', fallback=None)
