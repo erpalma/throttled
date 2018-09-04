@@ -64,6 +64,10 @@ You should make sure that **_thermald_** is not setting it back down. Stopping/d
 sudo systemctl stop thermald.service
 sudo systemctl disable thermald.service
 ```
+If you want to keep it disabled even after a package update you should also run:
+```
+sudo systemctl mask thermald.service
+```
 
 ### Fedora
 ```
