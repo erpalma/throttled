@@ -5,7 +5,6 @@ import configparser
 import dbus
 import glob
 import os
-import psutil
 import struct
 import subprocess
 import sys
@@ -130,6 +129,21 @@ def readmsr(msr, from_bit=0, to_bit=63, cpu=None, flatten=False):
             sys.exit(1)
         else:
             raise e
+
+
+def cpu_usage_pct(exit_event, interval=1.0):
+    last_idle = last_total = 0
+
+    for i in range(2):
+        with open('/proc/stat') as f:
+            fields = [float(column) for column in f.readline().strip().split()[1:]]
+        idle, total = fields[3], sum(fields)
+        idle_delta, total_delta = idle - last_idle, total - last_total
+        last_idle, last_total = idle, total
+        if i == 0:
+            exit_event.wait(interval)
+
+    return 100.0 * (1.0 - idle_delta / total_delta)
 
 
 def get_value_for_bits(val, from_bit=0, to_bit=63):
@@ -426,7 +440,7 @@ def power_thread(config, regs, exit_event):
         wait_t = config.getfloat(power['source'], 'Update_Rate_s')
         enable_hwp_mode = config.getboolean('AC', 'HWP_Mode', fallback=False)
         if power['source'] == 'AC' and enable_hwp_mode:
-            cpu_usage = float(psutil.cpu_percent(interval=wait_t))
+            cpu_usage = cpu_usage_pct(exit_event, interval=wait_t)
             # set full performance mode only when load is greater than this threshold (~ at least 1 core full speed)
             performance_mode = cpu_usage > 100. / (cpu_count() * 1.25)
             # check again if we are on AC, since in the meantime we might have switched to BATTERY
