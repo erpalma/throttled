@@ -153,7 +153,7 @@ def get_value_for_bits(val, from_bit=0, to_bit=63):
 
 def is_on_battery(config):
     try:
-        for path in glob.glob(config.get('Sysfs_Power_Path', 'GENERAL', fallback=DEFAULT_SYSFS_POWER_PATH)):
+        for path in glob.glob(config.get('GENERAL', 'Sysfs_Power_Path', fallback=DEFAULT_SYSFS_POWER_PATH)):
             with open(path) as f:
                 return not bool(int(f.read()))
     except:
