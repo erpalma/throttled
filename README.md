@@ -73,7 +73,7 @@ sudo systemctl mask thermald.service
 ```
 dnf install python3-cairo-devel cairo-gobject-devel gobject-introspection-devel dbus-glib-devel python-virtualenv python3-devel
 git clone https://github.com/erpalma/lenovo-throttling-fix.git
-sudo ./install.sh
+sudo ./lenovo-throttling-fix/install.sh
 ```
 Feedback about Fedora installation is welcome.
 
