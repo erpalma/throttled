@@ -55,7 +55,7 @@ Thanks to *felixonmars* for creating and maintaining this package.
 ```
 sudo apt install git virtualenv build-essential python3-dev libdbus-glib-1-dev libgirepository1.0-dev libcairo2-dev
 git clone https://github.com/erpalma/lenovo-throttling-fix.git
-sudo ./install.sh
+sudo ./lenovo-throttling-fix/install.sh
 ```
 If you own a X1C6 you can also check a tutorial for Ubuntu 18.04 [here](https://mensfeld.pl/2018/05/lenovo-thinkpad-x1-carbon-6th-gen-2018-ubuntu-18-04-tweaks/).
 
@@ -82,7 +82,7 @@ User *brycecordill* reported that the following dependecies are required for ins
 ```
 zypper install gcc python2-pip python3-devel python-devel dbus-1-glib-devel python3-cairo-devel cairo-devel python2-cairo-devel python3-gobject-cairo gobject-introspection-devel python-virtualenv 
 git clone https://github.com/erpalma/lenovo-throttling-fix.git
-sudo ./install.sh
+sudo ./lenovo-throttling-fix/install.sh
 ```
 
 ### Uninstall
