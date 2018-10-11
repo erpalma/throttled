@@ -71,7 +71,7 @@ sudo systemctl mask thermald.service
 
 ### Fedora
 ```
-dnf install python3-cairo-devel cairo-gobject-devel gobject-introspection-devel dbus-glib-devel python-virtualenv python3-devel
+dnf install python3-cairo-devel cairo-gobject-devel gobject-introspection-devel dbus-glib-devel python-virtualenv python3-devel python3-virtualenv
 git clone https://github.com/erpalma/lenovo-throttling-fix.git
 sudo ./lenovo-throttling-fix/install.sh
 ```
@@ -80,7 +80,7 @@ Feedback about Fedora installation is welcome.
 ### openSUSE
 User *brycecordill* reported that the following dependecies are required for installing in openSUSE. I guess that python2 dependecies can be safely dropped. I would really appreciate any feedback from openSUSE users.
 ```
-zypper install gcc python2-pip python3-devel python-devel dbus-1-glib-devel python3-cairo-devel cairo-devel python2-cairo-devel python3-gobject-cairo gobject-introspection-devel python-virtualenv 
+zypper install gcc python2-pip python3-devel python-devel dbus-1-glib-devel python3-cairo-devel cairo-devel python2-cairo-devel python3-gobject-cairo gobject-introspection-devel python-virtualenv
 git clone https://github.com/erpalma/lenovo-throttling-fix.git
 sudo ./lenovo-throttling-fix/install.sh
 ```
@@ -88,14 +88,14 @@ sudo ./lenovo-throttling-fix/install.sh
 ### Uninstall
 To permanently stop and disable the execution just issue:
 ```
-systemctl stop lenovo_fix.service 
+systemctl stop lenovo_fix.service
 systemctl disable lenovo_fix.service
 ```
 If you also need to remove the script from the system:
 ```
 rm -rf /opt/lenovo_fix /etc/systemd/system/lenovo_fix.service
 # to purge also the config file
-rm /etc/lenovo_fix.conf 
+rm /etc/lenovo_fix.conf
 ```
 On Arch you should probably use `pacman -R lenovo-throttling-fix-git` instead.
 
