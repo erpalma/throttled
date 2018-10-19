@@ -53,7 +53,7 @@ Thanks to *felixonmars* for creating and maintaining this package.
 
 ### Debian/Ubuntu
 ```
-sudo apt install git virtualenv build-essential python3-dev libdbus-glib-1-dev libgirepository1.0-dev libcairo2-dev
+sudo apt install git build-essential python3-dev libdbus-glib-1-dev libgirepository1.0-dev libcairo2-dev
 git clone https://github.com/erpalma/lenovo-throttling-fix.git
 sudo ./lenovo-throttling-fix/install.sh
 ```
@@ -71,7 +71,7 @@ sudo systemctl mask thermald.service
 
 ### Fedora
 ```
-dnf install python3-cairo-devel cairo-gobject-devel gobject-introspection-devel dbus-glib-devel python-virtualenv python3-devel python3-virtualenv
+dnf install python3-cairo-devel cairo-gobject-devel gobject-introspection-devel dbus-glib-devel python3-devel
 git clone https://github.com/erpalma/lenovo-throttling-fix.git
 sudo ./lenovo-throttling-fix/install.sh
 ```
@@ -80,7 +80,7 @@ Feedback about Fedora installation is welcome.
 ### openSUSE
 User *brycecordill* reported that the following dependecies are required for installing in openSUSE. I guess that python2 dependecies can be safely dropped. I would really appreciate any feedback from openSUSE users.
 ```
-zypper install gcc python2-pip python3-devel python-devel dbus-1-glib-devel python3-cairo-devel cairo-devel python2-cairo-devel python3-gobject-cairo gobject-introspection-devel python-virtualenv
+zypper install gcc python2-pip python3-devel python-devel dbus-1-glib-devel python3-cairo-devel cairo-devel python2-cairo-devel python3-gobject-cairo gobject-introspection-devel
 git clone https://github.com/erpalma/lenovo-throttling-fix.git
 sudo ./lenovo-throttling-fix/install.sh
 ```

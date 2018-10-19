@@ -22,7 +22,7 @@ cp systemd/lenovo_fix.service /etc/systemd/system
 echo "Building virtualenv..."
 cp requirements.txt lenovo_fix.py mmio.py "$INSTALL_DIR"
 cd "$INSTALL_DIR"
-virtualenv -p /usr/bin/python3 venv
+/usr/bin/python3 -m venv venv
 . venv/bin/activate
 pip install -r requirements.txt
 
