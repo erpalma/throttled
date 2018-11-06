@@ -570,7 +570,6 @@ def main():
     )
 
     if args.monitor is not None:
-        print('monit')
         monitor_thread = Thread(target=monitor, args=(exit_event, args.monitor))
         monitor_thread.daemon = True
         monitor_thread.start()
