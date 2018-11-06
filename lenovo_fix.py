@@ -93,7 +93,7 @@ def writemsr(msr, val):
             os.close(f)
     except (IOError, OSError) as e:
         if e.errno == EPERM or e.errno == EACCES:
-            print('[E] Unable to write to MSR. Try to disable Secure Boot.')
+            print('[E] Unable to write to MSR. Try to disable Secure Boot and check if your kernel does not restrict access to MSR.')
             sys.exit(1)
         else:
             raise e
