@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from __future__ import print_function
 
 import argparse
 import configparser
@@ -21,13 +22,7 @@ from threading import Event, Thread
 
 DEFAULT_SYSFS_POWER_PATH = '/sys/class/power_supply/AC*/online'
 
-VOLTAGE_PLANES = {
-    'CORE': 0,
-    'GPU': 1,
-    'CACHE': 2,
-    'UNCORE': 3,
-    'ANALOGIO': 4,
-}
+VOLTAGE_PLANES = {'CORE': 0, 'GPU': 1, 'CACHE': 2, 'UNCORE': 3, 'ANALOGIO': 4}
 
 TRIP_TEMP_RANGE = [40, 97]
 
@@ -42,7 +37,7 @@ platform_info_bits = {
     'feature_programmable_tdp_limit': [29, 29],
     'number_of_additional_tdp_profiles': [33, 34],
     'feature_programmable_temperature_target': [30, 30],
-    'feature_low_power_mode': [32, 32]
+    'feature_low_power_mode': [32, 32],
 }
 
 thermal_status_bits = {
@@ -95,7 +90,10 @@ def writemsr(msr, val):
             os.close(f)
     except (IOError, OSError) as e:
         if e.errno == EPERM or e.errno == EACCES:
-            print('[E] Unable to write to MSR. Try to disable Secure Boot and check if your kernel does not restrict access to MSR.')
+            print(
+                '[E] Unable to write to MSR. Try to disable Secure Boot '
+                'and check if your kernel does not restrict access to MSR.'
+            )
             sys.exit(1)
         else:
             raise e
@@ -149,7 +147,7 @@ def cpu_usage_pct(exit_event, interval=1.0):
 
 
 def get_value_for_bits(val, from_bit=0, to_bit=63):
-    mask = sum(2**x for x in range(from_bit, to_bit + 1))
+    mask = sum(2 ** x for x in range(from_bit, to_bit + 1))
     return (val & mask) >> from_bit
 
 
@@ -165,7 +163,7 @@ def is_on_battery(config):
 
 
 def get_cpu_platform_info():
-    features_msr_value = readmsr(0xce, cpu=0)
+    features_msr_value = readmsr(0xCE, cpu=0)
     cpu_platform_info = {}
     for key, value in platform_info_bits.items():
         cpu_platform_info[key] = int(get_value_for_bits(features_msr_value, value[0], value[1]))
@@ -174,7 +172,7 @@ def get_cpu_platform_info():
 
 def get_reset_thermal_status():
     # read thermal status
-    thermal_status_msr_value = readmsr(0x19c)
+    thermal_status_msr_value = readmsr(0x19C)
     thermal_status = []
     for core in range(cpu_count()):
         thermal_status_core = {}
@@ -182,25 +180,25 @@ def get_reset_thermal_status():
             thermal_status_core[key] = int(get_value_for_bits(thermal_status_msr_value[core], value[0], value[1]))
         thermal_status.append(thermal_status_core)
     # reset log bits
-    writemsr(0x19c, 0)
+    writemsr(0x19C, 0)
     return thermal_status
 
 
 def get_time_unit():
     # 0.000977 is the time unit of my CPU
     # TODO formula might be different for other CPUs
-    return 1.0 / 2**readmsr(0x606, 16, 19, cpu=0)
+    return 1.0 / 2 ** readmsr(0x606, 16, 19, cpu=0)
 
 
 def get_power_unit():
     # 0.125 is the power unit of my CPU
     # TODO formula might be different for other CPUs
-    return 1.0 / 2**readmsr(0x606, 0, 3, cpu=0)
+    return 1.0 / 2 ** readmsr(0x606, 0, 3, cpu=0)
 
 
 def get_critical_temp():
     # the critical temperature for my CPU is 100 'C
-    return readmsr(0x1a2, 16, 23, cpu=0)
+    return readmsr(0x1A2, 16, 23, cpu=0)
 
 
 def get_cur_pkg_power_limits():
@@ -215,9 +213,9 @@ def get_cur_pkg_power_limits():
 
 def calc_time_window_vars(t):
     time_unit = get_time_unit()
-    for Y in range(2**5):
-        for Z in range(2**2):
-            if t <= (2**Y) * (1. + Z / 4.) * time_unit:
+    for Y in range(2 ** 5):
+        for Z in range(2 ** 2):
+            if t <= (2 ** Y) * (1.0 + Z / 4.0) * time_unit:
                 return (Y, Z)
     raise ValueError('Unable to find a good combination!')
 
@@ -243,7 +241,7 @@ def calc_undervolt_mv(msr_value):
 
 def undervolt(config):
     for plane in VOLTAGE_PLANES:
-        write_offset_mv = config.getfloat('UNDERVOLT', plane, fallback=0.)
+        write_offset_mv = config.getfloat('UNDERVOLT', plane, fallback=0.0)
         write_value = calc_undervolt_msr(plane, write_offset_mv)
         writemsr(0x150, write_value)
         if args.debug:
@@ -252,8 +250,11 @@ def undervolt(config):
             read_value = readmsr(0x150, flatten=True)
             read_offset_mv = calc_undervolt_mv(read_value)
             match = OK if write_value == read_value else ERR
-            print('[D] Undervolt plane {:s} - write {:.0f} mV ({:#x}) - read {:.0f} mV ({:#x}) - match {}'.format(
-                plane, write_offset_mv, write_value, read_offset_mv, read_value, match))
+            print(
+                '[D] Undervolt plane {:s} - write {:.0f} mV ({:#x}) - read {:.0f} mV ({:#x}) - match {}'.format(
+                    plane, write_offset_mv, write_value, read_offset_mv, read_value, match
+                )
+            )
 
 
 def load_config():
@@ -262,13 +263,7 @@ def load_config():
 
     # config values sanity check
     for power_source in ('AC', 'BATTERY'):
-        for option in (
-                'Update_Rate_s',
-                'PL1_Tdp_W',
-                'PL1_Duration_s',
-                'PL2_Tdp_W',
-                'PL2_Duration_S',
-        ):
+        for option in ('Update_Rate_s', 'PL1_Tdp_W', 'PL1_Duration_s', 'PL2_Tdp_W', 'PL2_Duration_S'):
             value = config.getfloat(power_source, option, fallback=None)
             if value is not None:
                 value = config.set(power_source, option, str(max(0.1, value)))
@@ -281,16 +276,22 @@ def load_config():
             valid_trip_temp = min(TRIP_TEMP_RANGE[1], max(TRIP_TEMP_RANGE[0], trip_temp))
             if trip_temp != valid_trip_temp:
                 config.set(power_source, 'Trip_Temp_C', str(valid_trip_temp))
-                print('[!] Overriding invalid "Trip_Temp_C" value in "{:s}": {:.1f} -> {:.1f}'.format(
-                    power_source, trip_temp, valid_trip_temp))
+                print(
+                    '[!] Overriding invalid "Trip_Temp_C" value in "{:s}": {:.1f} -> {:.1f}'.format(
+                        power_source, trip_temp, valid_trip_temp
+                    )
+                )
 
     for plane in VOLTAGE_PLANES:
         value = config.getfloat('UNDERVOLT', plane)
         valid_value = min(0, value)
         if value != valid_value:
             config.set('UNDERVOLT', plane, str(valid_value))
-            print('[!] Overriding invalid "UNDERVOLT" value in "{:s}" voltage plane: {:.0f} -> {:.0f}'.format(
-                plane, value, valid_value))
+            print(
+                '[!] Overriding invalid "UNDERVOLT" value in "{:s}" voltage plane: {:.0f} -> {:.0f}'.format(
+                    plane, value, valid_value
+                )
+            )
 
     return config
 
@@ -349,8 +350,9 @@ def calc_reg_values(platform_info, config):
                 Y, Z = calc_time_window_vars(PL2_Duration_s)
                 TW2 = Y | (Z << 5)
 
-            regs[power_source]['MSR_PKG_POWER_LIMIT'] = PL1 | (1 << 15) | (TW1 << 17) | (PL2 << 32) | (1 << 47) | (
-                TW2 << 49)
+            regs[power_source]['MSR_PKG_POWER_LIMIT'] = (
+                PL1 | (1 << 15) | (TW1 << 17) | (PL2 << 32) | (1 << 47) | (TW2 << 49)
+            )
         else:
             print('[I] {:s} package power limits are disabled in config.'.format(power_source))
 
@@ -385,13 +387,13 @@ def set_hwp(pref):
 
 def power_thread(config, regs, exit_event):
     try:
-        mchbar_mmio = MMIO(0xfed159a0, 8)
+        mchbar_mmio = MMIO(0xFED159A0, 8)
     except MMIOError:
         print('[E] Unable to open /dev/mem. Try to disable Secure Boot.')
         sys.exit(1)
 
     while not exit_event.is_set():
-        #print thermal status
+        # print thermal status
         if args.debug:
             thermal_status = get_reset_thermal_status()
             for index, core_thermal_status in enumerate(thermal_status):
@@ -405,22 +407,28 @@ def power_thread(config, regs, exit_event):
         # set temperature trip point
         if 'MSR_TEMPERATURE_TARGET' in regs[power['source']]:
             write_value = regs[power['source']]['MSR_TEMPERATURE_TARGET']
-            writemsr(0x1a2, write_value)
+            writemsr(0x1A2, write_value)
             if args.debug:
-                read_value = readmsr(0x1a2, 24, 29, flatten=True)
+                read_value = readmsr(0x1A2, 24, 29, flatten=True)
                 match = OK if write_value >> 24 == read_value else ERR
-                print('[D] TEMPERATURE_TARGET - write {:#x} - read {:#x} - match {}'.format(
-                    write_value >> 24, read_value, match))
+                print(
+                    '[D] TEMPERATURE_TARGET - write {:#x} - read {:#x} - match {}'.format(
+                        write_value >> 24, read_value, match
+                    )
+                )
 
         # set cTDP
         if 'MSR_CONFIG_TDP_CONTROL' in regs[power['source']]:
             write_value = regs[power['source']]['MSR_CONFIG_TDP_CONTROL']
-            writemsr(0x64b, write_value)
+            writemsr(0x64B, write_value)
             if args.debug:
-                read_value = readmsr(0x64b, 0, 1, flatten=True)
+                read_value = readmsr(0x64B, 0, 1, flatten=True)
                 match = OK if write_value == read_value else ERR
-                print('[D] CONFIG_TDP_CONTROL - write {:#x} - read {:#x} - match {}'.format(
-                    write_value, read_value, match))
+                print(
+                    '[D] CONFIG_TDP_CONTROL - write {:#x} - read {:#x} - match {}'.format(
+                        write_value, read_value, match
+                    )
+                )
 
         # set PL1/2 on MSR
         write_value = regs[power['source']]['MSR_PKG_POWER_LIMIT']
@@ -428,23 +436,29 @@ def power_thread(config, regs, exit_event):
         if args.debug:
             read_value = readmsr(0x610, 0, 55, flatten=True)
             match = OK if write_value == read_value else ERR
-            print('[D] MSR PACKAGE_POWER_LIMIT - write {:#x} - read {:#x} - match {}'.format(
-                write_value, read_value, match))
+            print(
+                '[D] MSR PACKAGE_POWER_LIMIT - write {:#x} - read {:#x} - match {}'.format(
+                    write_value, read_value, match
+                )
+            )
         # set MCHBAR register to the same PL1/2 values
-        mchbar_mmio.write32(0, write_value & 0xffffffff)
+        mchbar_mmio.write32(0, write_value & 0xFFFFFFFF)
         mchbar_mmio.write32(4, write_value >> 32)
         if args.debug:
             read_value = mchbar_mmio.read32(0) | (mchbar_mmio.read32(4) << 32)
             match = OK if write_value == read_value else ERR
-            print('[D] MCHBAR PACKAGE_POWER_LIMIT - write {:#x} - read {:#x} - match {}'.format(
-                write_value, read_value, match))
+            print(
+                '[D] MCHBAR PACKAGE_POWER_LIMIT - write {:#x} - read {:#x} - match {}'.format(
+                    write_value, read_value, match
+                )
+            )
 
         wait_t = config.getfloat(power['source'], 'Update_Rate_s')
         enable_hwp_mode = config.getboolean('AC', 'HWP_Mode', fallback=False)
         if power['source'] == 'AC' and enable_hwp_mode:
             cpu_usage = cpu_usage_pct(exit_event, interval=wait_t)
             # set full performance mode only when load is greater than this threshold (~ at least 1 core full speed)
-            performance_mode = cpu_usage > 100. / (cpu_count() * 1.25)
+            performance_mode = cpu_usage > 100.0 / (cpu_count() * 1.25)
             # check again if we are on AC, since in the meantime we might have switched to BATTERY
             if not is_on_battery(config):
                 set_hwp('performance' if performance_mode else 'balance_performance')
@@ -523,13 +537,15 @@ def main():
 
     # add dbus receiver only if undervolt is enabled in config
     if any(config.getfloat('UNDERVOLT', plane) != 0 for plane in VOLTAGE_PLANES):
-        bus.add_signal_receiver(handle_sleep_callback, 'PrepareForSleep', 'org.freedesktop.login1.Manager',
-                                'org.freedesktop.login1')
+        bus.add_signal_receiver(
+            handle_sleep_callback, 'PrepareForSleep', 'org.freedesktop.login1.Manager', 'org.freedesktop.login1'
+        )
     bus.add_signal_receiver(
         handle_ac_callback,
         signal_name="PropertiesChanged",
         dbus_interface="org.freedesktop.DBus.Properties",
-        path="/org/freedesktop/UPower/devices/line_power_AC")
+        path="/org/freedesktop/UPower/devices/line_power_AC",
+    )
 
     try:
         loop = GLib.MainLoop()
