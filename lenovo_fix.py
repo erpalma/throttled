@@ -5,6 +5,7 @@ import configparser
 import dbus
 import glob
 import os
+import re
 import struct
 import subprocess
 import sys
@@ -15,6 +16,7 @@ from errno import EACCES, EPERM
 from gi.repository import GLib
 from mmio import MMIO, MMIOError
 from multiprocessing import cpu_count
+from platform import uname
 from threading import Event, Thread
 
 DEFAULT_SYSFS_POWER_PATH = '/sys/class/power_supply/AC*/online'
@@ -450,12 +452,35 @@ def power_thread(config, regs, exit_event):
             exit_event.wait(wait_t)
 
 
-def main():
-    global args
-
+def check_kernel():
     if os.geteuid() != 0:
         print('[E] No root no party. Try again with sudo.')
         sys.exit(1)
+
+    kernel_config = None
+    try:
+        with open(os.path.join('/boot', 'config-{:s}'.format(uname()[2]))) as f:
+            kernel_config = f.read()
+    except IOError:
+        try:
+            with open(os.path.join('/proc', 'config.gz')) as f:
+                kernel_config = f.read()
+        except IOError:
+            pass
+    if kernel_config is None:
+        print('[W] Unable to obtain and validate kernel config.')
+    elif not re.search('CONFIG_DEVMEM=y', kernel_config):
+        print('[E] Bad kernel config: you need CONFIG_DEVMEM=y.')
+        sys.exit(1)
+    elif not re.search('CONFIG_X86_MSR=(y|m)', kernel_config):
+        print('[E] Bad kernel config: you need CONFIG_X86_MSR builtin or as module.')
+        sys.exit(1)
+
+
+def main():
+    global args
+
+    check_kernel()
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--debug', action='store_true', help='add some debug info and additional checks')
