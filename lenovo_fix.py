@@ -64,6 +64,7 @@ thermal_status_bits = {
 
 
 class bcolors:
+    YELLOW = '\033[93m'
     GREEN = '\033[92m'
     RED = '\033[91m'
     RESET = '\033[0m'
@@ -72,6 +73,7 @@ class bcolors:
 
 OK = bcolors.GREEN + bcolors.BOLD + 'OK' + bcolors.RESET
 ERR = bcolors.RED + bcolors.BOLD + 'ERR' + bcolors.RESET
+LIM = bcolors.YELLOW + bcolors.BOLD + 'LIM' + bcolors.RESET
 
 
 def writemsr(msr, val):
@@ -491,13 +493,33 @@ def check_kernel():
         sys.exit(1)
 
 
+def monitor(exit_event, wait):
+    wait = max(0.1, wait)
+    print('Realtime monitoring of throttling causes:')
+    while not exit_event.is_set():
+        value = readmsr(0x19C, from_bit=0, to_bit=15, cpu=0)
+        offsets = {'Thermal': 0, 'Power': 10, 'Current': 12, 'Cross-comain (e.g. GPU)': 14}
+        output = ('{:s}: {:s}'.format(cause, LIM if bool((value >> offsets[cause]) & 1) else OK) for cause in offsets)
+        print(' - '.join(output) + ' ' * 10, end='\r')
+        exit_event.wait(wait)
+
+
 def main():
     global args
 
     check_kernel()
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--debug', action='store_true', help='add some debug info and additional checks')
+    exclusive_group = parser.add_mutually_exclusive_group()
+    exclusive_group.add_argument('--debug', action='store_true', help='add some debug info and additional checks')
+    exclusive_group.add_argument(
+        '--monitor',
+        metavar='update_rate',
+        const=1.0,
+        type=float,
+        nargs='?',
+        help='realtime monitoring of throttling causes (default 1s)',
+    )
     parser.add_argument('--config', default='/etc/lenovo_fix.conf', help='override default config file path')
     args = parser.parse_args()
 
@@ -547,6 +569,12 @@ def main():
         path="/org/freedesktop/UPower/devices/line_power_AC",
     )
 
+    if args.monitor is not None:
+        print('monit')
+        monitor_thread = Thread(target=monitor, args=(exit_event, args.monitor))
+        monitor_thread.daemon = True
+        monitor_thread.start()
+
     try:
         loop = GLib.MainLoop()
         loop.run()
@@ -556,6 +584,8 @@ def main():
     exit_event.set()
     loop.quit()
     thread.join(timeout=1)
+    if args.monitor is not None:
+        monitor_thread.join(timeout=0.1)
 
 
 if __name__ == '__main__':
