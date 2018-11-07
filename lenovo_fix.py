@@ -5,6 +5,7 @@ import argparse
 import configparser
 import dbus
 import glob
+import gzip
 import os
 import re
 import struct
@@ -480,7 +481,7 @@ def check_kernel():
             kernel_config = f.read()
     except IOError:
         try:
-            with open(os.path.join('/proc', 'config.gz')) as f:
+            with gzip.open(os.path.join('/proc', 'config.gz')) as f:
                 kernel_config = f.read()
         except IOError:
             pass
