@@ -19,6 +19,7 @@ from mmio import MMIO, MMIOError
 from multiprocessing import cpu_count
 from platform import uname
 from threading import Event, Thread
+from time import time
 
 DEFAULT_SYSFS_POWER_PATH = '/sys/class/power_supply/AC*/online'
 
@@ -494,13 +495,45 @@ def check_kernel():
 
 
 def monitor(exit_event, wait):
+    IA32_THERM_STATUS = 0x19C
+    IA32_PERF_STATUS = 0x198
+    MSR_RAPL_POWER_UNIT = 0x606
+    MSR_INTEL_PKG_ENERGY_STATUS = 0x611
+    MSR_PP1_ENERGY_STATUS = 0x641
+    MSR_DRAM_ENERGY_STATUS = 0x619
+
     wait = max(0.1, wait)
-    print('Realtime monitoring of throttling causes:')
+    rapl_power_unit = 0.5 ** readmsr(MSR_RAPL_POWER_UNIT, from_bit=8, to_bit=12, cpu=0)
+    power_plane_msr = {
+        'Package': MSR_INTEL_PKG_ENERGY_STATUS,
+        'Graphics': MSR_PP1_ENERGY_STATUS,
+        'DRAM': MSR_DRAM_ENERGY_STATUS,
+    }
+    prev_energy = {
+        'Package': (readmsr(MSR_INTEL_PKG_ENERGY_STATUS, cpu=0) * rapl_power_unit, time()),
+        'Graphics': (readmsr(MSR_PP1_ENERGY_STATUS, cpu=0) * rapl_power_unit, time()),
+        'DRAM': (readmsr(MSR_DRAM_ENERGY_STATUS, cpu=0) * rapl_power_unit, time()),
+    }
+
+    print('Realtime monitoring of throttling causes:\n')
     while not exit_event.is_set():
-        value = readmsr(0x19C, from_bit=0, to_bit=15, cpu=0)
+        value = readmsr(IA32_THERM_STATUS, from_bit=0, to_bit=15, cpu=0)
         offsets = {'Thermal': 0, 'Power': 10, 'Current': 12, 'Cross-comain (e.g. GPU)': 14}
         output = ('{:s}: {:s}'.format(cause, LIM if bool((value >> offsets[cause]) & 1) else OK) for cause in offsets)
-        print(' - '.join(output) + ' ' * 10, end='\r')
+
+        # ugly code, just testing...
+        vcore = readmsr(IA32_PERF_STATUS, from_bit=32, to_bit=47, cpu=0) / (2.0 ** 13) * 1000
+        stats2 = {'VCore': '{:.0f} mV'.format(vcore)}
+        for power_plane in ('Package', 'Graphics', 'DRAM'):
+            energy_j = readmsr(power_plane_msr[power_plane], cpu=0) * rapl_power_unit
+            now = time()
+            prev_energy[power_plane], energy_w = (
+                (energy_j, now),
+                (energy_j - prev_energy[power_plane][0]) / (now - prev_energy[power_plane][1]),
+            )
+            stats2[power_plane] = '{:.1f} W'.format(energy_w)
+        output2 = ('{:s}: {:s}'.format(label, stats2[label]) for label in stats2)
+        print(' - '.join(output) + '  ||  ' + ' - '.join(output2) + ' ' * 10, end='\r')
         exit_event.wait(wait)
 
 
