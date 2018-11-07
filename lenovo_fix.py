@@ -477,13 +477,16 @@ def check_kernel():
 
     kernel_config = None
     try:
-        with open(os.path.join('/boot', 'config-{:s}'.format(uname()[2]))) as f:
+        with open(os.path.join('/boot', 'coanfig-{:s}'.format(uname()[2]))) as f:
             kernel_config = f.read()
     except IOError:
+        config_gz_path = os.path.join('/proc', 'config.gz')
         try:
-            with gzip.open(os.path.join('/proc', 'config.gz')) as f:
-                kernel_config = f.read()
-        except IOError:
+            if not os.path.isfile(config_gz_path):
+                subprocess.check_call(('modprobe', 'configs'))
+            with gzip.open(config_gz_path) as f:
+                kernel_config = f.read().decode()
+        except (subprocess.CalledProcessError, IOError):
             pass
     if kernel_config is None:
         print('[W] Unable to obtain and validate kernel config.')
