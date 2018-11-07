@@ -478,11 +478,11 @@ def check_kernel():
     kernel_config = None
     try:
         with open(os.path.join('/boot', 'config-{:s}'.format(uname()[2]))) as f:
-            kernel_config = f.read()
+            kernel_config = f.read().decode('utf8')
     except IOError:
         try:
             with gzip.open(os.path.join('/proc', 'config.gz')) as f:
-                kernel_config = f.read()
+                kernel_config = f.read().decode('utf8')
         except IOError:
             pass
     if kernel_config is None:
