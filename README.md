@@ -124,7 +124,7 @@ ANALOGIO: 0
 With the flag `--monitor` the tool *constantly* monitors the throttling status, indicating the cause among thermal limit, power limit, current limit or cross-origin. The last cause is often related to an external event (e.g. by the GPU). The update rate can be adjusted and defaults to 1 second. Example output:
 ```
 ./lenovo_fix.py --monitor
-Thermal: OK - Power: LIM - Current: OK - Cross-comain (e.g. GPU): OK
+Thermal: OK - Power: OK - Current: OK - Cross-comain (e.g. GPU): OK  ||  VCore: 533 mV - Package: 2.2 W - Graphics: 0.3 W - DRAM: 0.8 W
 ```
 
 ## Debug
