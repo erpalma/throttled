@@ -477,7 +477,7 @@ def check_kernel():
 
     kernel_config = None
     try:
-        with open(os.path.join('/boot', 'coanfig-{:s}'.format(uname()[2]))) as f:
+        with open(os.path.join('/boot', 'config-{:s}'.format(uname()[2]))) as f:
             kernel_config = f.read()
     except IOError:
         config_gz_path = os.path.join('/proc', 'config.gz')
