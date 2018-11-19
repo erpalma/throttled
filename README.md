@@ -15,6 +15,7 @@ Other users have confirmed that the script is also working for these laptops:
 - Lenovo X280
 - ThinkPad Anniversary Edition 25
 - Dell XPS 9370
+- Dell Latitude 7390 2-in-1
 
 I will keep this list updated.
 
