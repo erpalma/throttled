@@ -13,6 +13,7 @@ Other users have confirmed that the script is also working for these laptops:
 - Lenovo L480
 - Lenovo T470
 - Lenovo X280
+- ThinkPad Anniversary Edition 25
 - Dell XPS 9370
 
 I will keep this list updated.
