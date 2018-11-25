@@ -75,12 +75,25 @@ sudo systemctl mask thermald.service
 
 ### Fedora
 ```
-dnf install python3-cairo-devel cairo-gobject-devel gobject-introspection-devel dbus-glib-devel python3-devel make
+dnf install python3-cairo-devel cairo-gobject-devel gobject-introspection-devel dbus-glib-devel python3-devel make dbus-python
 git clone https://github.com/erpalma/lenovo-throttling-fix.git
 sudo ./lenovo-throttling-fix/install.sh
 ```
 Feedback about Fedora installation is welcome.
 
+### RHEL 7
+```
+yum install python34-cairo-devel cairo-gobject-devel gobject-introspection-devel dbus-glib-devel python34-devel make python34-dbus python34-gobject
+git clone https://github.com/erpalma/lenovo-throttling-fix.git
+```
+edit your system /boot/config-$(uname -r) to add a line that says
+```
+CONFIG_DEVMEM=y
+```
+reboot your system and install with
+```
+sudo ./lenovo-throttling-fix/install.sh
+```
 ### openSUSE
 User *brycecordill* reported that the following dependecies are required for installing in openSUSE. I guess that python2 dependecies can be safely dropped. I would really appreciate any feedback from openSUSE users.
 ```
