@@ -103,6 +103,15 @@ rm /etc/lenovo_fix.conf
 ```
 On Arch you should probably use `pacman -R lenovo-throttling-fix-git` instead.
 
+### Update
+If you update the tool you should manually check your config file for changes or additional features and modify it accordingly. The update process is then as simple as:
+```
+cd lenovo-throttling-fix
+git pull
+sudo ./install.sh
+sudo systemctl restart lenovo_fix.service
+```
+
 ## Configuration
 The configuration has moved to `/etc/lenovo_fix.conf`. Makefile does not overwrite your previous config file, so you need to manually check for differences in config file structure when updating the tool. If you want to overwrite the config with new defaults just issue `sudo cp etc/lenovo_fix.conf /etc`. There exist two profiles `AC` and `BATTERY` and the script can be totally disabled by setting `Enabled: False` in the `GENERAL` section. Undervolt is applied if any voltage plane in the config file (section UNDERVOLT) was set. Notice that the offset is in *mV* and only undervolting (*i.e.* negative values) is supported.
 All fields accept floating point values as well as integers.
