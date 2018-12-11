@@ -537,7 +537,7 @@ def monitor(exit_event, wait):
             )
             stats2[power_plane] = '{:.1f} W'.format(energy_w)
         output2 = ('{:s}: {:s}'.format(label, stats2[label]) for label in stats2)
-        print(' - '.join(output) + '  ||  ' + ' - '.join(output2) + ' ' * 10, end='\r')
+        print('[{}] {}  ||  {}{}'.format(power['source'], ' - '.join(output), ' - '.join(output2), ' ' * 10), end='\r')
         exit_event.wait(wait)
 
 
