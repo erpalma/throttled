@@ -23,11 +23,9 @@ from threading import Event, Thread
 from time import time
 
 DEFAULT_SYSFS_POWER_PATH = '/sys/class/power_supply/AC*/online'
-
 VOLTAGE_PLANES = {'CORE': 0, 'GPU': 1, 'CACHE': 2, 'UNCORE': 3, 'ANALOGIO': 4}
-
 TRIP_TEMP_RANGE = [40, 97]
-
+UNDERVOLT_KEYS = ('UNDERVOLT', 'UNDERVOLT.AC', 'UNDERVOLT.BATTERY')
 power = {'source': None, 'method': 'polling'}
 
 platform_info_bits = {
@@ -245,7 +243,9 @@ def calc_undervolt_mv(msr_value):
 
 def undervolt(config):
     for plane in VOLTAGE_PLANES:
-        write_offset_mv = config.getfloat('UNDERVOLT', plane, fallback=0.0)
+        write_offset_mv = config.getfloat(
+            'UNDERVOLT.{:s}'.format(power['source']), plane, fallback=config.getfloat('UNDERVOLT', plane, fallback=0.0)
+        )
         write_value = calc_undervolt_msr(plane, write_offset_mv)
         writemsr(0x150, write_value)
         if args.debug:
@@ -286,16 +286,29 @@ def load_config():
                     )
                 )
 
-    for plane in VOLTAGE_PLANES:
-        value = config.getfloat('UNDERVOLT', plane)
-        valid_value = min(0, value)
-        if value != valid_value:
-            config.set('UNDERVOLT', plane, str(valid_value))
-            print(
-                '[!] Overriding invalid "UNDERVOLT" value in "{:s}" voltage plane: {:.0f} -> {:.0f}'.format(
-                    plane, value, valid_value
-                )
-            )
+    # fix any invalid value (ie. < 0) in the undervolt settings
+    for key in UNDERVOLT_KEYS:
+        for plane in VOLTAGE_PLANES:
+            if key in config:
+                value = config.getfloat(key, plane)
+                valid_value = min(0, value)
+                if value != valid_value:
+                    config.set(key, plane, str(valid_value))
+                    print(
+                        '[!] Overriding invalid "{:s}" value in "{:s}" voltage plane: {:.0f} -> {:.0f}'.format(
+                            key, plane, value, valid_value
+                        )
+                    )
+
+    # handle the case where only one of UNDERVOLT.AC, UNDERVOLT.BATTERY keys exists
+    # by forcing the other key to all zeros (ie. no undervolt)
+    if any(key in config for key in UNDERVOLT_KEYS[1:]):
+        for key in UNDERVOLT_KEYS[1:]:
+            if key not in config:
+                config.add_section(key)
+            for plane in VOLTAGE_PLANES:
+                value = config.getfloat(key, plane, fallback=0.0)
+                config.set(key, plane, str(value))
 
     return config
 
@@ -595,7 +608,7 @@ def main():
     bus = dbus.SystemBus()
 
     # add dbus receiver only if undervolt is enabled in config
-    if any(config.getfloat('UNDERVOLT', plane) != 0 for plane in VOLTAGE_PLANES):
+    if any(config.getfloat(key, plane, fallback=0) != 0 for plane in VOLTAGE_PLANES for key in UNDERVOLT_KEYS):
         bus.add_signal_receiver(
             handle_sleep_callback, 'PrepareForSleep', 'org.freedesktop.login1.Manager', 'org.freedesktop.login1'
         )
