@@ -62,6 +62,17 @@ thermal_status_bits = {
     'reading_valid': [31, 31],
 }
 
+supported_cpus = {
+    'Haswell': (0x3C, 0x3F, 0x45, 0x46),
+    'Broadwell': (0x3D, 0x47, 0x4F, 0x56),
+    'Skylake': (0x4E, 0x55),
+    'Skylake-S': (0x5E,),
+    'Ice Lake': (0x7E,),
+    'Kaby Lake (R)': (0x8E, 0x9E),
+    'Coffee Lake': (0x9E,),
+    'Cannon Lake': (0x66,),
+}
+
 
 class bcolors:
     YELLOW = '\033[93m'
@@ -505,6 +516,36 @@ def check_kernel():
         fatal('[E] Bad kernel config: you need CONFIG_X86_MSR builtin or as module.')
 
 
+def check_cpu():
+    try:
+        with open('/proc/cpuinfo') as f:
+            cpuinfo = {}
+            for row in f.readlines():
+                try:
+                    key, value = map(lambda x: x.strip(), row.split(':'))
+                    if key == 'processor' and value == '1':
+                        break
+                    try:
+                        cpuinfo[key] = int(value, 0)
+                    except ValueError:
+                        cpuinfo[key] = value
+                except ValueError:
+                    pass
+        if cpuinfo['vendor_id'] != 'GenuineIntel':
+            fatal('[E] This tool is designed for Intel CPUs only.')
+
+        cpu_model = None
+        for model in supported_cpus:
+            if cpuinfo['model'] in supported_cpus[model]:
+                cpu_model = model
+                break
+        if cpuinfo['cpu family'] != 6 or cpu_model is None:
+            fatal('[E] Your CPU model is not supported.')
+
+        print('[I] Detected CPU architecture: Intel {:s}'.format(cpu_model))
+    except:
+        fatal('[E] Unable to identify CPU model.')
+
 
 def monitor(exit_event, wait):
     IA32_THERM_STATUS = 0x19C
@@ -552,8 +593,6 @@ def monitor(exit_event, wait):
 def main():
     global args
 
-    check_kernel()
-
     parser = argparse.ArgumentParser()
     exclusive_group = parser.add_mutually_exclusive_group()
     exclusive_group.add_argument('--debug', action='store_true', help='add some debug info and additional checks')
@@ -566,7 +605,12 @@ def main():
         help='realtime monitoring of throttling causes (default 1s)',
     )
     parser.add_argument('--config', default='/etc/lenovo_fix.conf', help='override default config file path')
+    parser.add_argument('--force', action='store_true', help='bypass compatibility checks (EXPERTS only)')
     args = parser.parse_args()
+
+    if not args.force:
+        check_kernel()
+        check_cpu()
 
     config = load_config()
     power['source'] = 'BATTERY' if is_on_battery(config) else 'AC'
