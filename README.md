@@ -57,7 +57,7 @@ Thanks to *felixonmars* for creating and maintaining this package.
 
 ### Debian/Ubuntu
 ```
-sudo apt install git build-essential python3-dev libdbus-glib-1-dev libgirepository1.0-dev libcairo2-dev python3-venv
+sudo apt install git build-essential python3-dev libdbus-glib-1-dev libgirepository1.0-dev libcairo2-dev python3-venv python3-wheel
 git clone https://github.com/erpalma/lenovo-throttling-fix.git
 sudo ./lenovo-throttling-fix/install.sh
 ```
