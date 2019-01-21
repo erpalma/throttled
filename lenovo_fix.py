@@ -173,9 +173,31 @@ def is_on_battery(config):
         for path in glob.glob(config.get('GENERAL', 'Sysfs_Power_Path', fallback=DEFAULT_SYSFS_POWER_PATH)):
             with open(path) as f:
                 return not bool(int(f.read()))
+        raise
+    except:
+        warning('No valid Sysfs_Power_Path found! Trying upower method #1')
+    try:
+        out = subprocess.check_output(('upower', '-i', '/org/freedesktop/UPower/devices/line_power_AC'))
+        res = re.search(rb'online:\s+(yes|no)', out).group(1).decode().strip()
+        if res == 'yes':
+            return False
+        elif res == 'no':
+            return True
+        raise
+    except:
+        warning('Trying upower method #2')
+    try:
+        out = subprocess.check_output(('upower', '-i', '/org/freedesktop/UPower/devices/battery_BAT0'))
+        res = re.search(rb'state:\s+(.+)', out).group(1).decode().strip()
+        if res == 'discharging':
+            return True
+        elif res in ('fully-charged', 'charging'):
+            return False
     except:
         pass
-    fatal('[E] No valid Sysfs_Power_Path found!')
+
+    warning('No valid power detection methods found. Assuming that the system is running on battery power.')
+    return True
 
 
 def get_cpu_platform_info():
