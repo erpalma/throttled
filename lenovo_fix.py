@@ -88,8 +88,12 @@ LIM = bcolors.YELLOW + bcolors.BOLD + 'LIM' + bcolors.RESET
 
 
 def fatal(msg, code=1):
-    print(msg)
+    print('[E] {:s}'.format(msg))
     sys.exit(code)
+
+
+def warning(msg):
+    print('[W] {:s}'.format(msg))
 
 
 def writemsr(msr, val):
@@ -98,7 +102,7 @@ def writemsr(msr, val):
         try:
             subprocess.check_call(('modprobe', 'msr'))
         except subprocess.CalledProcessError:
-            fatal('[E] Unable to load the msr module.')
+            fatal('Unable to load the msr module.')
     try:
         for addr in msr_list:
             f = os.open(addr, os.O_WRONLY)
@@ -108,7 +112,7 @@ def writemsr(msr, val):
     except (IOError, OSError) as e:
         if e.errno == EPERM or e.errno == EACCES:
             fatal(
-                '[E] Unable to write to MSR. Try to disable Secure Boot '
+                'Unable to write to MSR. Try to disable Secure Boot '
                 'and check if your kernel does not restrict access to MSR.'
             )
         else:
@@ -119,13 +123,13 @@ def writemsr(msr, val):
 def readmsr(msr, from_bit=0, to_bit=63, cpu=None, flatten=False):
     assert cpu is None or cpu in range(cpu_count())
     if from_bit > to_bit:
-        fatal('[E] Wrong readmsr bit params')
+        fatal('Wrong readmsr bit params')
     msr_list = ['/dev/cpu/{:d}/msr'.format(x) for x in range(cpu_count())]
     if not os.path.exists(msr_list[0]):
         try:
             subprocess.check_call(('modprobe', 'msr'))
         except subprocess.CalledProcessError:
-            fatal('[E] Unable to load the msr module.')
+            fatal('Unable to load the msr module.')
     try:
         output = []
         for addr in msr_list:
@@ -139,7 +143,7 @@ def readmsr(msr, from_bit=0, to_bit=63, cpu=None, flatten=False):
         return output[cpu] if cpu is not None else output
     except (IOError, OSError) as e:
         if e.errno == EPERM or e.errno == EACCES:
-            fatal('[E] Unable to read from MSR. Try to disable Secure Boot.')
+            fatal('Unable to read from MSR. Try to disable Secure Boot.')
         else:
             raise e
 
@@ -282,7 +286,7 @@ def load_config():
             if value is not None:
                 value = config.set(power_source, option, str(max(0.1, value)))
             elif option == 'Update_Rate_s':
-                fatal('[E] The mandatory "Update_Rate_s" parameter is missing.')
+                fatal('The mandatory "Update_Rate_s" parameter is missing.')
 
         trip_temp = config.getfloat(power_source, 'Trip_Temp_C', fallback=None)
         if trip_temp is not None:
@@ -326,7 +330,7 @@ def calc_reg_values(platform_info, config):
     regs = defaultdict(dict)
     for power_source in ('AC', 'BATTERY'):
         if platform_info['feature_programmable_temperature_target'] != 1:
-            print("[W] Setting temperature target is not supported by this CPU")
+            warning("Setting temperature target is not supported by this CPU")
         else:
             # the critical temperature for my CPU is 100 'C
             critical_temp = get_critical_temp()
@@ -415,7 +419,7 @@ def power_thread(config, regs, exit_event):
     try:
         mchbar_mmio = MMIO(0xFED159A0, 8)
     except MMIOError:
-        fatal('[E] Unable to open /dev/mem. Try to disable Secure Boot.')
+        fatal('Unable to open /dev/mem. Try to disable Secure Boot.')
 
     while not exit_event.is_set():
         # print thermal status
@@ -493,7 +497,7 @@ def power_thread(config, regs, exit_event):
 
 def check_kernel():
     if os.geteuid() != 0:
-        fatal('[E] No root no party. Try again with sudo.')
+        fatal('No root no party. Try again with sudo.')
 
     kernel_config = None
     try:
@@ -511,9 +515,9 @@ def check_kernel():
     if kernel_config is None:
         print('[W] Unable to obtain and validate kernel config.')
     elif not re.search('CONFIG_DEVMEM=y', kernel_config):
-        fatal('[E] Bad kernel config: you need CONFIG_DEVMEM=y.')
+        fatal('Bad kernel config: you need CONFIG_DEVMEM=y.')
     elif not re.search('CONFIG_X86_MSR=(y|m)', kernel_config):
-        fatal('[E] Bad kernel config: you need CONFIG_X86_MSR builtin or as module.')
+        fatal('Bad kernel config: you need CONFIG_X86_MSR builtin or as module.')
 
 
 def check_cpu():
@@ -532,7 +536,7 @@ def check_cpu():
                 except ValueError:
                     pass
         if cpuinfo['vendor_id'] != 'GenuineIntel':
-            fatal('[E] This tool is designed for Intel CPUs only.')
+            fatal('This tool is designed for Intel CPUs only.')
 
         cpu_model = None
         for model in supported_cpus:
@@ -540,11 +544,11 @@ def check_cpu():
                 cpu_model = model
                 break
         if cpuinfo['cpu family'] != 6 or cpu_model is None:
-            fatal('[E] Your CPU model is not supported.')
+            fatal('Your CPU model is not supported.')
 
         print('[I] Detected CPU architecture: Intel {:s}'.format(cpu_model))
     except:
-        fatal('[E] Unable to identify CPU model.')
+        fatal('Unable to identify CPU model.')
 
 
 def monitor(exit_event, wait):
