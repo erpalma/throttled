@@ -62,6 +62,17 @@ thermal_status_bits = {
     'reading_valid': [31, 31],
 }
 
+supported_cpus = {
+    'Haswell': (0x3C, 0x3F, 0x45, 0x46),
+    'Broadwell': (0x3D, 0x47, 0x4F, 0x56),
+    'Skylake': (0x4E, 0x55),
+    'Skylake-S': (0x5E,),
+    'Ice Lake': (0x7E,),
+    'Kaby Lake (R)': (0x8E, 0x9E),
+    'Coffee Lake': (0x9E,),
+    'Cannon Lake': (0x66,),
+}
+
 
 class bcolors:
     YELLOW = '\033[93m'
@@ -77,8 +88,12 @@ LIM = bcolors.YELLOW + bcolors.BOLD + 'LIM' + bcolors.RESET
 
 
 def fatal(msg, code=1):
-    print(msg)
+    print('[E] {:s}'.format(msg))
     sys.exit(code)
+
+
+def warning(msg):
+    print('[W] {:s}'.format(msg))
 
 
 def writemsr(msr, val):
@@ -87,7 +102,7 @@ def writemsr(msr, val):
         try:
             subprocess.check_call(('modprobe', 'msr'))
         except subprocess.CalledProcessError:
-            fatal('[E] Unable to load the msr module.')
+            fatal('Unable to load the msr module.')
     try:
         for addr in msr_list:
             f = os.open(addr, os.O_WRONLY)
@@ -97,7 +112,7 @@ def writemsr(msr, val):
     except (IOError, OSError) as e:
         if e.errno == EPERM or e.errno == EACCES:
             fatal(
-                '[E] Unable to write to MSR. Try to disable Secure Boot '
+                'Unable to write to MSR. Try to disable Secure Boot '
                 'and check if your kernel does not restrict access to MSR.'
             )
         else:
@@ -108,13 +123,13 @@ def writemsr(msr, val):
 def readmsr(msr, from_bit=0, to_bit=63, cpu=None, flatten=False):
     assert cpu is None or cpu in range(cpu_count())
     if from_bit > to_bit:
-        fatal('[E] Wrong readmsr bit params')
+        fatal('Wrong readmsr bit params')
     msr_list = ['/dev/cpu/{:d}/msr'.format(x) for x in range(cpu_count())]
     if not os.path.exists(msr_list[0]):
         try:
             subprocess.check_call(('modprobe', 'msr'))
         except subprocess.CalledProcessError:
-            fatal('[E] Unable to load the msr module.')
+            fatal('Unable to load the msr module.')
     try:
         output = []
         for addr in msr_list:
@@ -128,7 +143,7 @@ def readmsr(msr, from_bit=0, to_bit=63, cpu=None, flatten=False):
         return output[cpu] if cpu is not None else output
     except (IOError, OSError) as e:
         if e.errno == EPERM or e.errno == EACCES:
-            fatal('[E] Unable to read from MSR. Try to disable Secure Boot.')
+            fatal('Unable to read from MSR. Try to disable Secure Boot.')
         else:
             raise e
 
@@ -158,9 +173,31 @@ def is_on_battery(config):
         for path in glob.glob(config.get('GENERAL', 'Sysfs_Power_Path', fallback=DEFAULT_SYSFS_POWER_PATH)):
             with open(path) as f:
                 return not bool(int(f.read()))
+        raise
+    except:
+        warning('No valid Sysfs_Power_Path found! Trying upower method #1')
+    try:
+        out = subprocess.check_output(('upower', '-i', '/org/freedesktop/UPower/devices/line_power_AC'))
+        res = re.search(rb'online:\s+(yes|no)', out).group(1).decode().strip()
+        if res == 'yes':
+            return False
+        elif res == 'no':
+            return True
+        raise
+    except:
+        warning('Trying upower method #2')
+    try:
+        out = subprocess.check_output(('upower', '-i', '/org/freedesktop/UPower/devices/battery_BAT0'))
+        res = re.search(rb'state:\s+(.+)', out).group(1).decode().strip()
+        if res == 'discharging':
+            return True
+        elif res in ('fully-charged', 'charging'):
+            return False
     except:
         pass
-    fatal('[E] No valid Sysfs_Power_Path found!')
+
+    warning('No valid power detection methods found. Assuming that the system is running on battery power.')
+    return True
 
 
 def get_cpu_platform_info():
@@ -271,7 +308,7 @@ def load_config():
             if value is not None:
                 value = config.set(power_source, option, str(max(0.1, value)))
             elif option == 'Update_Rate_s':
-                fatal('[E] The mandatory "Update_Rate_s" parameter is missing.')
+                fatal('The mandatory "Update_Rate_s" parameter is missing.')
 
         trip_temp = config.getfloat(power_source, 'Trip_Temp_C', fallback=None)
         if trip_temp is not None:
@@ -315,7 +352,7 @@ def calc_reg_values(platform_info, config):
     regs = defaultdict(dict)
     for power_source in ('AC', 'BATTERY'):
         if platform_info['feature_programmable_temperature_target'] != 1:
-            print("[W] Setting temperature target is not supported by this CPU")
+            warning("Setting temperature target is not supported by this CPU")
         else:
             # the critical temperature for my CPU is 100 'C
             critical_temp = get_critical_temp()
@@ -404,7 +441,7 @@ def power_thread(config, regs, exit_event):
     try:
         mchbar_mmio = MMIO(0xFED159A0, 8)
     except MMIOError:
-        fatal('[E] Unable to open /dev/mem. Try to disable Secure Boot.')
+        fatal('Unable to open /dev/mem. Try to disable Secure Boot.')
 
     while not exit_event.is_set():
         # print thermal status
@@ -482,7 +519,7 @@ def power_thread(config, regs, exit_event):
 
 def check_kernel():
     if os.geteuid() != 0:
-        fatal('[E] No root no party. Try again with sudo.')
+        fatal('No root no party. Try again with sudo.')
 
     kernel_config = None
     try:
@@ -500,10 +537,40 @@ def check_kernel():
     if kernel_config is None:
         print('[W] Unable to obtain and validate kernel config.')
     elif not re.search('CONFIG_DEVMEM=y', kernel_config):
-        fatal('[E] Bad kernel config: you need CONFIG_DEVMEM=y.')
+        fatal('Bad kernel config: you need CONFIG_DEVMEM=y.')
     elif not re.search('CONFIG_X86_MSR=(y|m)', kernel_config):
-        fatal('[E] Bad kernel config: you need CONFIG_X86_MSR builtin or as module.')
+        fatal('Bad kernel config: you need CONFIG_X86_MSR builtin or as module.')
 
+
+def check_cpu():
+    try:
+        with open('/proc/cpuinfo') as f:
+            cpuinfo = {}
+            for row in f.readlines():
+                try:
+                    key, value = map(lambda x: x.strip(), row.split(':'))
+                    if key == 'processor' and value == '1':
+                        break
+                    try:
+                        cpuinfo[key] = int(value, 0)
+                    except ValueError:
+                        cpuinfo[key] = value
+                except ValueError:
+                    pass
+        if cpuinfo['vendor_id'] != 'GenuineIntel':
+            fatal('This tool is designed for Intel CPUs only.')
+
+        cpu_model = None
+        for model in supported_cpus:
+            if cpuinfo['model'] in supported_cpus[model]:
+                cpu_model = model
+                break
+        if cpuinfo['cpu family'] != 6 or cpu_model is None:
+            fatal('Your CPU model is not supported.')
+
+        print('[I] Detected CPU architecture: Intel {:s}'.format(cpu_model))
+    except:
+        fatal('Unable to identify CPU model.')
 
 
 def monitor(exit_event, wait):
@@ -552,8 +619,6 @@ def monitor(exit_event, wait):
 def main():
     global args
 
-    check_kernel()
-
     parser = argparse.ArgumentParser()
     exclusive_group = parser.add_mutually_exclusive_group()
     exclusive_group.add_argument('--debug', action='store_true', help='add some debug info and additional checks')
@@ -566,7 +631,12 @@ def main():
         help='realtime monitoring of throttling causes (default 1s)',
     )
     parser.add_argument('--config', default='/etc/lenovo_fix.conf', help='override default config file path')
+    parser.add_argument('--force', action='store_true', help='bypass compatibility checks (EXPERTS only)')
     args = parser.parse_args()
+
+    if not args.force:
+        check_kernel()
+        check_cpu()
 
     config = load_config()
     power['source'] = 'BATTERY' if is_on_battery(config) else 'AC'
