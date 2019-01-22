@@ -80,6 +80,15 @@ git clone https://github.com/erpalma/lenovo-throttling-fix.git
 sudo ./lenovo-throttling-fix/install.sh
 ```
 
+### Gentoo
+An overlay is [available](https://github.com/erpalma/throttled-overlay).
+```
+layman -o https://github.com/erpalma/throttled-overlay/raw/master/repositories.xml -f -a throttled
+sudo emerge -av sys-power/throttled
+systemctl enable throttled.service
+systemctl start throttled.service
+```
+
 ### Uninstall
 To permanently stop and disable the execution just issue:
 ```
