@@ -88,12 +88,12 @@ LIM = bcolors.YELLOW + bcolors.BOLD + 'LIM' + bcolors.RESET
 
 
 def fatal(msg, code=1):
-    print('[E] {:s}'.format(msg))
+    print('[E] {:s}'.format(msg), file=sys.stderr)
     sys.exit(code)
 
 
 def warning(msg):
-    print('[W] {:s}'.format(msg))
+    print('[W] {:s}'.format(msg), file=sys.stderr)
 
 
 def writemsr(msr, val):
