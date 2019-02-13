@@ -7,6 +7,7 @@ The CPU package power limit (PL1/2) is forced to a value of **44 W** (29 W on ba
 Other users have confirmed that the tool is also working for these laptops:
 - Lenovo T480, T480s, X1C5, X1C6, T580, L480, T470, X280, ThinkPad Anniversary Edition 25
 - Dell XPS 9365, 9370, Latitude 7390 2-in-1
+- Microsoft Surface Book 2
 
 
 I will keep this list updated.
