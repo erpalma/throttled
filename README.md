@@ -68,7 +68,7 @@ sudo systemctl mask thermald.service
 
 ### Fedora
 ```
-dnf install python3-cairo-devel cairo-gobject-devel gobject-introspection-devel dbus-glib-devel python3-devel make libX11-devel
+sudo dnf install python3-cairo-devel cairo-gobject-devel gobject-introspection-devel dbus-glib-devel python3-devel make libX11-devel
 git clone https://github.com/erpalma/lenovo-throttling-fix.git
 sudo ./lenovo-throttling-fix/install.sh
 ```
@@ -77,7 +77,7 @@ Feedback about Fedora installation is welcome.
 ### openSUSE
 User *brycecordill* reported that the following dependencies are required for installing in openSUSE, tested on openSUSE 15.0 Leap.
 ```
-zypper install gcc python3-devel dbus-1-glib-devel python3-cairo-devel cairo-devel python3-gobject-cairo gobject-introspection-devel
+sudo zypper install gcc python3-devel dbus-1-glib-devel python3-cairo-devel cairo-devel python3-gobject-cairo gobject-introspection-devel
 git clone https://github.com/erpalma/lenovo-throttling-fix.git
 sudo ./lenovo-throttling-fix/install.sh
 ```
