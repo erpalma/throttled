@@ -597,7 +597,7 @@ def monitor(exit_event, wait):
     print('Realtime monitoring of throttling causes:\n')
     while not exit_event.is_set():
         value = readmsr(IA32_THERM_STATUS, from_bit=0, to_bit=15, cpu=0)
-        offsets = {'Thermal': 0, 'Power': 10, 'Current': 12, 'Cross-comain (e.g. GPU)': 14}
+        offsets = {'Thermal': 0, 'Power': 10, 'Current': 12, 'Cross-domain (e.g. GPU)': 14}
         output = ('{:s}: {:s}'.format(cause, LIM if bool((value >> offsets[cause]) & 1) else OK) for cause in offsets)
 
         # ugly code, just testing...
