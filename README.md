@@ -91,12 +91,31 @@ systemctl enable throttled.service
 systemctl start throttled.service
 ```
 
+### Void
+
+The installation itself will create a runit service as lenovo_fix, enable it and start it. Before installation, make sure dbus is running `sv up dbus`.
+
+```
+sudo xbps-install -Sy gcc git python3-devel dbus-glib-devel libgirepository-devel cairo-devel python3-wheel pkg-config make
+
+git clone https://github.com/erpalma/lenovo-throttling-fix.git
+
+sudo ./lenovo-throttling-fix/install.sh
+```
+
 ### Uninstall
 To permanently stop and disable the execution just issue:
 ```
 systemctl stop lenovo_fix.service
 systemctl disable lenovo_fix.service
 ```
+
+If you're running runit instead of systemd:
+```
+sv down lenovo_fix
+rm /var/service/lenovo_fix
+```
+
 If you also need to remove the tool from the system:
 ```
 rm -rf /opt/lenovo_fix /etc/systemd/system/lenovo_fix.service
