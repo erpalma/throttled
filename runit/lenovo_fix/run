@@ -1,0 +1,2 @@
+#!/bin/sh
+PYTHONUNBUFFERED=1 exec /opt/lenovo_fix/venv/bin/python3 /opt/lenovo_fix/lenovo_fix.py
