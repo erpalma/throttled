@@ -24,8 +24,10 @@ from time import time
 
 DEFAULT_SYSFS_POWER_PATH = '/sys/class/power_supply/AC*/online'
 VOLTAGE_PLANES = {'CORE': 0, 'GPU': 1, 'CACHE': 2, 'UNCORE': 3, 'ANALOGIO': 4}
+CURRENT_PLANES = {'CORE': 0, 'GPU': 1, 'CACHE': 2}
 TRIP_TEMP_RANGE = [40, 97]
 UNDERVOLT_KEYS = ('UNDERVOLT', 'UNDERVOLT.AC', 'UNDERVOLT.BATTERY')
+ICCMAX_KEYS = ('ICCMAX', 'ICCMAX.AC', 'ICCMAX.BATTERY')
 power = {'source': None, 'method': 'polling'}
 
 platform_info_bits = {
@@ -277,6 +279,17 @@ def calc_undervolt_mv(msr_value):
     return int(round(offset / 1.024))
 
 
+def get_undervolt(plane=None, convert=False):
+    planes = [plane] if plane in VOLTAGE_PLANES else VOLTAGE_PLANES
+    out = {}
+    for plane in planes:
+        writemsr(0x150, 0x8000001000000000 | (VOLTAGE_PLANES[plane] << 40))
+        read_value = readmsr(0x150, flatten=True) & 0xFFFFFFFF
+        out[plane] = calc_undervolt_mv(read_value) if convert else read_value
+
+    return out
+
+
 def undervolt(config):
     for plane in VOLTAGE_PLANES:
         write_offset_mv = config.getfloat(
@@ -286,8 +299,7 @@ def undervolt(config):
         writemsr(0x150, write_value)
         if args.debug:
             write_value &= 0xFFFFFFFF
-            writemsr(0x150, 0x8000001000000000 | (VOLTAGE_PLANES[plane] << 40))
-            read_value = readmsr(0x150, flatten=True)
+            read_value = get_undervolt(plane)[plane]
             read_offset_mv = calc_undervolt_mv(read_value)
             match = OK if write_value == read_value else ERR
             print(
@@ -295,6 +307,56 @@ def undervolt(config):
                     plane, write_offset_mv, write_value, read_offset_mv, read_value, match
                 )
             )
+
+
+def calc_icc_max_msr(plane, current):
+    """Return the value to be written in the MSR 150h for setting the given
+    IccMax (in A) to the given current plane.
+    """
+    assert 0 < current <= 0x3FF
+    assert plane in CURRENT_PLANES
+    current = int(round(current * 4))
+    return 0x8000001700000000 | (CURRENT_PLANES[plane] << 40) | current
+
+
+def calc_icc_max_amp(msr_value):
+    """Return the max current (in A) from the given raw MSR 150h value.
+    """
+    return (msr_value & 0x3FF) / 4.0
+
+
+def get_icc_max(plane=None, convert=False):
+    planes = [plane] if plane in CURRENT_PLANES else CURRENT_PLANES
+    out = {}
+    for plane in planes:
+        writemsr(0x150, 0x8000001600000000 | (CURRENT_PLANES[plane] << 40))
+        read_value = readmsr(0x150, flatten=True) & 0x3FF
+        out[plane] = calc_icc_max_amp(read_value) if convert else read_value
+
+    return out
+
+
+def set_icc_max(config):
+    for plane in CURRENT_PLANES:
+        try:
+            write_current_amp = config.getfloat(
+                'ICCMAX.{:s}'.format(power['source']), plane, fallback=config.getfloat('ICCMAX', plane, fallback=-1.0)
+            )
+            if write_current_amp > 0:
+                write_value = calc_icc_max_msr(plane, write_current_amp)
+                writemsr(0x150, write_value)
+                if args.debug:
+                    write_value &= 0x3FF
+                    read_value = get_icc_max(plane)[plane]
+                    read_current_A = calc_icc_max_amp(read_value)
+                    match = OK if write_value == read_value else ERR
+                    print(
+                        '[D] IccMax plane {:s} - write {:.2f} A ({:#x}) - read {:.2f} A ({:#x}) - match {}'.format(
+                            plane, write_current_amp, write_value, read_current_A, read_value, match
+                        )
+                    )
+        except (configparser.NoSectionError, configparser.NoOptionError):
+            pass
 
 
 def load_config():
@@ -321,7 +383,7 @@ def load_config():
                     )
                 )
 
-    # fix any invalid value (ie. < 0) in the undervolt settings
+    # fix any invalid value (ie. > 0) in the undervolt settings
     for key in UNDERVOLT_KEYS:
         for plane in VOLTAGE_PLANES:
             if key in config:
@@ -344,6 +406,24 @@ def load_config():
             for plane in VOLTAGE_PLANES:
                 value = config.getfloat(key, plane, fallback=0.0)
                 config.set(key, plane, str(value))
+
+    iccmax_enabled = False
+    # check for invalid values (ie. <= 0 or > 0x3FF) in the IccMax settings
+    for key in ICCMAX_KEYS:
+        for plane in CURRENT_PLANES:
+            if key in config:
+                try:
+                    value = config.getfloat(key, plane)
+                    if value <= 0 or value >= 0x3FF:
+                        raise ValueError
+                    iccmax_enabled = True
+                except ValueError:
+                    warning('Invalid value for {:s} in {:s}'.format(plane, key))
+                    config.remove_option(key, plane)
+                except configparser.NoOptionError:
+                    pass
+    if iccmax_enabled:
+        warning('Warning! Raising IccMax above design limits can damage your system!')
 
     return config
 
@@ -594,7 +674,15 @@ def monitor(exit_event, wait):
         'DRAM': (readmsr(MSR_DRAM_ENERGY_STATUS, cpu=0) * rapl_power_unit, time()),
     }
 
-    print('Realtime monitoring of throttling causes:\n')
+    undervolt_values = get_undervolt(convert=True)
+    undervolt_output = ' | '.join('{:s}: {:.2f} mV'.format(plane, undervolt_values[plane]) for plane in VOLTAGE_PLANES)
+    print('[D] Undervolt offsets: {:s}'.format(undervolt_output))
+
+    iccmax_values = get_icc_max(convert=True)
+    iccmax_output = ' | '.join('{:s}: {:.2f} A'.format(plane, iccmax_values[plane]) for plane in CURRENT_PLANES)
+    print('[D] IccMax: {:s}'.format(iccmax_output))
+
+    print('[D] Realtime monitoring of throttling causes:\n')
     while not exit_event.is_set():
         value = readmsr(IA32_THERM_STATUS, from_bit=0, to_bit=15, cpu=0)
         offsets = {'Thermal': 0, 'Power': 10, 'Current': 12, 'Cross-domain (e.g. GPU)': 14}
@@ -638,6 +726,7 @@ def main():
         check_kernel()
         check_cpu()
 
+    print('[I] Loading config file.')
     config = load_config()
     power['source'] = 'BATTERY' if is_on_battery(config) else 'AC'
 
@@ -656,11 +745,13 @@ def main():
     thread.start()
 
     undervolt(config)
+    set_icc_max(config)
 
-    # handle dbus events for applying undervolt on resume from sleep/hybernate
+    # handle dbus events for applying undervolt/IccMax on resume from sleep/hybernate
     def handle_sleep_callback(sleeping):
         if not sleeping:
             undervolt(config)
+            set_icc_max(config)
 
     def handle_ac_callback(*args):
         try:
@@ -672,8 +763,10 @@ def main():
     DBusGMainLoop(set_as_default=True)
     bus = dbus.SystemBus()
 
-    # add dbus receiver only if undervolt is enabled in config
-    if any(config.getfloat(key, plane, fallback=0) != 0 for plane in VOLTAGE_PLANES for key in UNDERVOLT_KEYS):
+    # add dbus receiver only if undervolt/IccMax is enabled in config
+    if any(
+        config.getfloat(key, plane, fallback=0) != 0 for plane in VOLTAGE_PLANES for key in UNDERVOLT_KEYS + ICCMAX_KEYS
+    ):
         bus.add_signal_receiver(
             handle_sleep_callback, 'PrepareForSleep', 'org.freedesktop.login1.Manager', 'org.freedesktop.login1'
         )
@@ -683,6 +776,8 @@ def main():
         dbus_interface="org.freedesktop.DBus.Properties",
         path="/org/freedesktop/UPower/devices/line_power_AC",
     )
+
+    print('[I] Starting main loop.')
 
     if args.monitor is not None:
         monitor_thread = Thread(target=monitor, args=(exit_event, args.monitor))
