@@ -160,7 +160,14 @@ ANALOGIO: 0
 With the flag `--monitor` the tool *constantly* monitors the throttling status, indicating the cause among thermal limit, power limit, current limit or cross-origin. The last cause is often related to an external event (e.g. by the GPU). The update rate can be adjusted and defaults to 1 second. Example output:
 ```
 ./lenovo_fix.py --monitor
-Thermal: OK - Power: OK - Current: OK - Cross-comain (e.g. GPU): OK  ||  VCore: 533 mV - Package: 2.2 W - Graphics: 0.3 W - DRAM: 0.8 W
+[I] Detected CPU architecture: Intel Kaby Lake (R)
+[I] Loading config file.
+[I] Starting main loop.
+[D] Undervolt offsets: CORE: -105.00 mV | GPU: -85.00 mV | CACHE: -105.00 mV | UNCORE: -85.00 mV | ANALOGIO: 0.00 mV
+[D] IccMax: CORE: 64.00 A | GPU: 31.00 A | CACHE: 6.00 A
+[D] Realtime monitoring of throttling causes:
+
+[AC] Thermal: OK - Power: OK - Current: OK - Cross-domain (e.g. GPU): OK  ||  VCore: 549 mV - Package: 2.6 W - Graphics: 0.4 W - DRAM: 1.2 W
 ```
 
 ## Debug
