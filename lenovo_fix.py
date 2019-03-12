@@ -585,7 +585,8 @@ def power_thread(config, regs, exit_event):
             if not is_on_battery(config):
                 set_hwp('performance' if performance_mode else 'balance-performance')
         elif power['source'] == 'BATTERY' and enable_hwp_mode:
-            set_hwp('power')
+            exit_event.wait(wait_t)
+            set_hwp('balance-power')
         else:
             exit_event.wait(wait_t)
 
