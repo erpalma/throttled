@@ -70,6 +70,16 @@ sudo systemctl mask thermald.service
 ```
 
 ### Fedora
+A [copr repository](https://copr.fedorainfracloud.org/coprs/abn/throttled/) is available and can be used as detailed below. You can find the configuration installed at `/etc/throttled.conf`. The issue tracker for this packaging is available [here](https://github.com/abn/throttled-rpm/issues).
+```
+dnf copr enable abn/throttled
+dnf install -y throttled
+
+systemctl enable throttled
+systemctl start throttled
+```
+
+If you prefer to install from source, you can use the following commands.
 ```
 sudo dnf install python3-cairo-devel cairo-gobject-devel gobject-introspection-devel dbus-glib-devel python3-devel make libX11-devel
 git clone https://github.com/erpalma/lenovo-throttling-fix.git
