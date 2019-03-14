@@ -503,18 +503,9 @@ def calc_reg_values(platform_info, config):
 
 def set_hwp(pref):
     # set HWP energy performance hints
-    assert pref in ('performance', 'balance_performance', 'default', 'balance_power', 'power')
-    CPUs = [
-        '/sys/devices/system/cpu/cpu{:d}/cpufreq/energy_performance_preference'.format(x) for x in range(cpu_count())
-    ]
-    for i, c in enumerate(CPUs):
-        with open(c, 'wb') as f:
-            f.write(pref.encode())
-        if args.debug:
-            with open(c) as f:
-                read_value = f.read().strip()
-                match = OK if pref == read_value else ERR
-                print('[D] HWP for cpu{:d} - write "{:s}" - read "{:s}" - match {}'.format(i, pref, read_value, match))
+    assert pref in ('performance', 'balance-performance', 'default', 'balance-power', 'power')
+    subprocess.run("x86_energy_perf_policy --all " + pref, shell=True)
+    print("x86_energy_perf_policy --all " + pref)
 
 
 def power_thread(config, regs, exit_event):
@@ -592,7 +583,10 @@ def power_thread(config, regs, exit_event):
             performance_mode = cpu_usage > 100.0 / (cpu_count() * 1.25)
             # check again if we are on AC, since in the meantime we might have switched to BATTERY
             if not is_on_battery(config):
-                set_hwp('performance' if performance_mode else 'balance_performance')
+                set_hwp('performance' if performance_mode else 'balance-performance')
+        elif power['source'] == 'BATTERY' and enable_hwp_mode:
+            exit_event.wait(wait_t)
+            set_hwp('balance-power')
         else:
             exit_event.wait(wait_t)
 
