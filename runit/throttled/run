@@ -1,0 +1,2 @@
+#!/bin/sh
+PYTHONUNBUFFERED=1 exec /opt/throttled/venv/bin/python3 /opt/throttled/throttled.py
