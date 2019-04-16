@@ -591,7 +591,9 @@ def power_thread(config, regs, exit_event):
             # set full performance mode only when load is greater than this threshold (~ at least 1 core full speed)
             performance_mode = cpu_usage > 100.0 / (cpu_count() * 1.25)
             # check again if we are on AC, since in the meantime we might have switched to BATTERY
-            if (power['method'] == 'dbus' and power['source'] == 'AC') or (power['method'] == 'polling' and not is_on_battery(config)):
+            if (power['method'] == 'dbus' and power['source'] == 'AC') or (
+                power['method'] == 'polling' and not is_on_battery(config)
+            ):
                 set_hwp('performance' if performance_mode else 'balance_performance')
         else:
             exit_event.wait(wait_t)
