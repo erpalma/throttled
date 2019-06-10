@@ -2,8 +2,6 @@
 from __future__ import print_function
 
 import argparse
-import configparser
-import dbus
 import glob
 import gzip
 import os
@@ -11,16 +9,18 @@ import re
 import struct
 import subprocess
 import sys
-
 from collections import defaultdict
-from dbus.mainloop.glib import DBusGMainLoop
 from errno import EACCES, EPERM
-from gi.repository import GLib
-from mmio import MMIO, MMIOError
 from multiprocessing import cpu_count
 from platform import uname
 from threading import Event, Thread
 from time import time
+
+import configparser
+import dbus
+from dbus.mainloop.glib import DBusGMainLoop
+from gi.repository import GLib
+from mmio import MMIO, MMIOError
 
 DEFAULT_SYSFS_POWER_PATH = '/sys/class/power_supply/AC*/online'
 VOLTAGE_PLANES = {'CORE': 0, 'GPU': 1, 'CACHE': 2, 'UNCORE': 3, 'ANALOGIO': 4}
@@ -29,6 +29,9 @@ TRIP_TEMP_RANGE = [40, 97]
 UNDERVOLT_KEYS = ('UNDERVOLT', 'UNDERVOLT.AC', 'UNDERVOLT.BATTERY')
 ICCMAX_KEYS = ('ICCMAX', 'ICCMAX.AC', 'ICCMAX.BATTERY')
 power = {'source': None, 'method': 'polling'}
+HWP_VALUE = 0x20
+HWP_INTERVAL = 60
+
 
 platform_info_bits = {
     'maximum_non_turbo_ratio': [8, 15],
@@ -148,21 +151,6 @@ def readmsr(msr, from_bit=0, to_bit=63, cpu=None, flatten=False):
             fatal('Unable to read from MSR. Try to disable Secure Boot.')
         else:
             raise e
-
-
-def cpu_usage_pct(exit_event, interval=1.0):
-    last_idle = last_total = 0
-
-    for i in range(2):
-        with open('/proc/stat') as f:
-            fields = [float(column) for column in f.readline().strip().split()[1:]]
-        idle, total = fields[3], sum(fields)
-        idle_delta, total_delta = idle - last_idle, total - last_total
-        last_idle, last_total = idle, total
-        if i == 0:
-            exit_event.wait(interval)
-
-    return 100.0 * (1.0 - idle_delta / total_delta)
 
 
 def get_value_for_bits(val, from_bit=0, to_bit=63):
@@ -501,20 +489,16 @@ def calc_reg_values(platform_info, config):
     return regs
 
 
-def set_hwp(pref):
-    # set HWP energy performance hints
-    assert pref in ('performance', 'balance_performance', 'default', 'balance_power', 'power')
-    CPUs = [
-        '/sys/devices/system/cpu/cpu{:d}/cpufreq/energy_performance_preference'.format(x) for x in range(cpu_count())
-    ]
-    for i, c in enumerate(CPUs):
-        with open(c, 'wb') as f:
-            f.write(pref.encode())
-        if args.debug:
-            with open(c) as f:
-                read_value = f.read().strip()
-                match = OK if pref == read_value else ERR
-                print('[D] HWP for cpu{:d} - write "{:s}" - read "{:s}" - match {}'.format(i, pref, read_value, match))
+def set_hwp():
+    # set HWP energy performance preference
+    cur_val = readmsr(0x774, cpu=0)
+    new_val = (cur_val & 0xFFFFFFFF00FFFFFF) | (HWP_VALUE << 24)
+
+    writemsr(0x774, new_val)
+    if args.debug:
+        read_value = readmsr(0x774, from_bit=24, to_bit=31)[0]
+        match = OK if HWP_VALUE == read_value else ERR
+        print('[D] HWP - write "{:#02x}" - read "{:#02x}" - match {}'.format(HWP_VALUE, read_value, match))
 
 
 def power_thread(config, regs, exit_event):
@@ -523,6 +507,7 @@ def power_thread(config, regs, exit_event):
     except MMIOError:
         fatal('Unable to open /dev/mem. Try to disable Secure Boot.')
 
+    next_hwp_write = 0
     while not exit_event.is_set():
         # print thermal status
         if args.debug:
@@ -586,15 +571,18 @@ def power_thread(config, regs, exit_event):
 
         wait_t = config.getfloat(power['source'], 'Update_Rate_s')
         enable_hwp_mode = config.getboolean('AC', 'HWP_Mode', fallback=False)
-        if power['source'] == 'AC' and enable_hwp_mode:
-            cpu_usage = cpu_usage_pct(exit_event, interval=wait_t)
-            # set full performance mode only when load is greater than this threshold (~ at least 1 core full speed)
-            performance_mode = cpu_usage > 100.0 / (cpu_count() * 1.25)
-            # check again if we are on AC, since in the meantime we might have switched to BATTERY
-            if (power['method'] == 'dbus' and power['source'] == 'AC') or (
-                power['method'] == 'polling' and not is_on_battery(config)
-            ):
-                set_hwp('performance' if performance_mode else 'balance_performance')
+        # set HWP less frequently. Just to be safe since (e.g.) TLP might reset this value
+        if (
+            enable_hwp_mode
+            and next_hwp_write <= time()
+            and (
+                (power['method'] == 'dbus' and power['source'] == 'AC')
+                or (power['method'] == 'polling' and not is_on_battery(config))
+            )
+        ):
+            set_hwp()
+            next_hwp_write = time() + HWP_INTERVAL
+
         else:
             exit_event.wait(wait_t)
 
