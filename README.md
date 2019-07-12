@@ -90,7 +90,7 @@ Feedback about Fedora installation is welcome.
 ### openSUSE
 User *brycecordill* reported that the following dependencies are required for installing in openSUSE, tested on openSUSE 15.0 Leap.
 ```
-sudo zypper install gcc python3-devel dbus-1-glib-devel python3-cairo-devel cairo-devel python3-gobject-cairo gobject-introspection-devel
+sudo zypper install gcc make python3-devel dbus-1-glib-devel python3-cairo-devel cairo-devel python3-gobject-cairo gobject-introspection-devel
 git clone https://github.com/erpalma/lenovo-throttling-fix.git
 sudo ./lenovo-throttling-fix/install.sh
 ```

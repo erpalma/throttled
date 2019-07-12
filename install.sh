@@ -3,12 +3,12 @@
 INSTALL_DIR="/opt/lenovo_fix"
 
 if pidof systemd 2>&1 1>/dev/null; then
-    systemctl stop lenovo_fix.service &>/dev/null
+    systemctl stop lenovo_fix.service >/dev/null 2>&1
 elif pidof runit 2>&1 1>/dev/null; then
-    sv down lenovo_fix &>/dev/null
+    sv down lenovo_fix >/dev/null 2>&1
 fi
 
-mkdir -p "$INSTALL_DIR" &>/dev/null
+mkdir -p "$INSTALL_DIR" >/dev/null 2>&1
 set -e
 
 cd "$(dirname "$0")"
