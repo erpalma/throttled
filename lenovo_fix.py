@@ -356,7 +356,7 @@ def load_config():
         for option in ('Update_Rate_s', 'PL1_Tdp_W', 'PL1_Duration_s', 'PL2_Tdp_W', 'PL2_Duration_S'):
             value = config.getfloat(power_source, option, fallback=None)
             if value is not None:
-                value = config.set(power_source, option, str(max(0.1, value)))
+                value = config.set(power_source, option, str(max(0.001, value)))
             elif option == 'Update_Rate_s':
                 fatal('The mandatory "Update_Rate_s" parameter is missing.')
 
@@ -471,7 +471,7 @@ def calc_reg_values(platform_info, config):
                 TW2 = Y | (Z << 5)
 
             regs[power_source]['MSR_PKG_POWER_LIMIT'] = (
-                PL1 | (1 << 15) | (TW1 << 17) | (PL2 << 32) | (1 << 47) | (TW2 << 49)
+                PL1 | (1 << 15) | (1 << 16) | (TW1 << 17) | (PL2 << 32) | (1 << 47) | (TW2 << 49)
             )
         else:
             print('[I] {:s} package power limits are disabled in config.'.format(power_source))
