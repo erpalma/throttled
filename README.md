@@ -44,9 +44,9 @@ The tool is now running with Python3 by default (tested w/ 3.6) and a virtualenv
 
 ## Installation
 
-### Arch Linux [AUR package](https://aur.archlinux.org/packages/lenovo-throttling-fix-git/):
+### Arch Linux [community package](https://www.archlinux.org/packages/community/x86_64/throttled/):
 ```
-yay -S lenovo-throttling-fix-git
+pacman -S throttled
 sudo systemctl enable --now lenovo_fix.service
 ```
 Thanks to *felixonmars* for creating and maintaining this package.
