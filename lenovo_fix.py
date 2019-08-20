@@ -395,6 +395,13 @@ def load_config():
                 value = config.getfloat(key, plane, fallback=0.0)
                 config.set(key, plane, str(value))
 
+    # Check for CORE/CACHE values mismatch
+    for key in UNDERVOLT_KEYS:
+        if key in config:
+            if config.getfloat(key, 'CORE', fallback=0) != config.getfloat(key, 'CACHE', fallback=0):
+                warning('On Skylake and newer CPUs CORE and CACHE values should match!')
+                break
+
     iccmax_enabled = False
     # check for invalid values (ie. <= 0 or > 0x3FF) in the IccMax settings
     for key in ICCMAX_KEYS:
