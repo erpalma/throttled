@@ -15,6 +15,7 @@ from multiprocessing import cpu_count
 from platform import uname
 from threading import Event, Thread
 from time import time
+from datetime import datetime
 
 import configparser
 import dbus
@@ -697,7 +698,9 @@ def monitor(exit_event, wait):
             )
             stats2[power_plane] = '{:.1f} W'.format(energy_w)
         output2 = ('{:s}: {:s}'.format(label, stats2[label]) for label in stats2)
-        print('[{}] {}  ||  {}{}'.format(power['source'], ' - '.join(output), ' - '.join(output2), ' ' * 10), end='\r')
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+        print(timestamp,'[{}] {}  ||  {}{}'.format(power['source'], ' - '.join(output), ' - '.join(output2), ' ' * 10), end='\n')
+        sys.stdout.flush()
         exit_event.wait(wait)
 
 
