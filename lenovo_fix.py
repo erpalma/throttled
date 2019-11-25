@@ -157,15 +157,18 @@ def get_value_for_bits(val, from_bit=0, to_bit=63):
     mask = sum(2 ** x for x in range(from_bit, to_bit + 1))
     return (val & mask) >> from_bit
 
-
+_number_of_warns = 0
 def is_on_battery(config):
+    global _number_of_warns
     try:
         for path in glob.glob(config.get('GENERAL', 'Sysfs_Power_Path', fallback=DEFAULT_SYSFS_POWER_PATH)):
             with open(path) as f:
                 return not bool(int(f.read()))
         raise
     except:
-        warning('No valid Sysfs_Power_Path found! Trying upower method #1')
+        if _number_of_warns == 0:
+            _number_of_warns += 1
+            warning('No valid Sysfs_Power_Path found! Trying upower method #1')
     try:
         out = subprocess.check_output(('upower', '-i', '/org/freedesktop/UPower/devices/line_power_AC'))
         res = re.search(rb'online:\s+(yes|no)', out).group(1).decode().strip()
@@ -175,7 +178,9 @@ def is_on_battery(config):
             return True
         raise
     except:
-        warning('Trying upower method #2')
+        if _number_of_warns == 1:
+            _number_of_warns += 1
+            warning('Trying upower method #2')
     try:
         out = subprocess.check_output(('upower', '-i', '/org/freedesktop/UPower/devices/battery_BAT0'))
         res = re.search(rb'state:\s+(.+)', out).group(1).decode().strip()
@@ -186,7 +191,9 @@ def is_on_battery(config):
     except:
         pass
 
-    warning('No valid power detection methods found. Assuming that the system is running on battery power.')
+    if _number_of_warns == 2:
+        _number_of_warns += 1
+        warning('No valid power detection methods found. Assuming that the system is running on battery power.')
     return True
 
 
