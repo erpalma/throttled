@@ -2,6 +2,7 @@
 from __future__ import print_function
 
 import argparse
+import configparser
 import glob
 import gzip
 import os
@@ -10,13 +11,13 @@ import struct
 import subprocess
 import sys
 from collections import defaultdict
+from datetime import datetime
 from errno import EACCES, EPERM
 from multiprocessing import cpu_count
 from platform import uname
 from threading import Event, Thread
 from time import time
 
-import configparser
 import dbus
 from dbus.mainloop.glib import DBusGMainLoop
 from gi.repository import GLib
@@ -91,14 +92,33 @@ OK = bcolors.GREEN + bcolors.BOLD + 'OK' + bcolors.RESET
 ERR = bcolors.RED + bcolors.BOLD + 'ERR' + bcolors.RESET
 LIM = bcolors.YELLOW + bcolors.BOLD + 'LIM' + bcolors.RESET
 
+log_history = set()
 
-def fatal(msg, code=1):
-    print('[E] {:s}'.format(msg), file=sys.stderr)
+
+def log(msg, oneshot=False, end='\n'):
+    outfile = args.log if args.log else sys.stdout
+    if msg.strip() not in log_history or oneshot is False:
+        tstamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+        full_msg = '{:s}: {:s}'.format(tstamp, msg) if args.log else msg
+        print(full_msg, file=outfile, end=end)
+        log_history.add(msg.strip())
+
+
+def fatal(msg, code=1, end='\n'):
+    outfile = args.log if args.log else sys.stderr
+    tstamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+    full_msg = '{:s}: [E] {:s}'.format(tstamp, msg) if args.log else '[E] {:s}'.format(msg)
+    print(full_msg, file=outfile, end=end)
     sys.exit(code)
 
 
-def warning(msg):
-    print('[W] {:s}'.format(msg), file=sys.stderr)
+def warning(msg, oneshot=True, end='\n'):
+    outfile = args.log if args.log else sys.stderr
+    if msg.strip() not in log_history or oneshot is False:
+        tstamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+        full_msg = '{:s}: [W] {:s}'.format(tstamp, msg) if args.log else '[W] {:s}'.format(msg)
+        print(full_msg, file=outfile, end=end)
+        log_history.add(msg.strip())
 
 
 def writemsr(msr, val):
@@ -290,7 +310,7 @@ def undervolt(config):
             read_value = get_undervolt(plane)[plane]
             read_offset_mv = calc_undervolt_mv(read_value)
             match = OK if write_value == read_value else ERR
-            print(
+            log(
                 '[D] Undervolt plane {:s} - write {:.0f} mV ({:#x}) - read {:.0f} mV ({:#x}) - match {}'.format(
                     plane, write_offset_mv, write_value, read_offset_mv, read_value, match
                 )
@@ -338,7 +358,7 @@ def set_icc_max(config):
                     read_value = get_icc_max(plane)[plane]
                     read_current_A = calc_icc_max_amp(read_value)
                     match = OK if write_value == read_value else ERR
-                    print(
+                    log(
                         '[D] IccMax plane {:s} - write {:.2f} A ({:#x}) - read {:.2f} A ({:#x}) - match {}'.format(
                             plane, write_current_amp, write_value, read_current_A, read_value, match
                         )
@@ -365,7 +385,7 @@ def load_config():
             valid_trip_temp = min(TRIP_TEMP_RANGE[1], max(TRIP_TEMP_RANGE[0], trip_temp))
             if trip_temp != valid_trip_temp:
                 config.set(power_source, 'Trip_Temp_C', str(valid_trip_temp))
-                print(
+                log(
                     '[!] Overriding invalid "Trip_Temp_C" value in "{:s}": {:.1f} -> {:.1f}'.format(
                         power_source, trip_temp, valid_trip_temp
                     )
@@ -379,7 +399,7 @@ def load_config():
                 valid_value = min(0, value)
                 if value != valid_value:
                     config.set(key, plane, str(valid_value))
-                    print(
+                    log(
                         '[!] Overriding invalid "{:s}" value in "{:s}" voltage plane: {:.0f} -> {:.0f}'.format(
                             key, plane, value, valid_value
                         )
@@ -413,7 +433,7 @@ def load_config():
                         raise ValueError
                     iccmax_enabled = True
                 except ValueError:
-                    warning('Invalid value for {:s} in {:s}'.format(plane, key))
+                    warning('Invalid value for {:s} in {:s}'.format(plane, key), oneshot=False)
                     config.remove_option(key, plane)
                 except configparser.NoOptionError:
                     pass
@@ -440,7 +460,7 @@ def calc_reg_values(platform_info, config):
                 trip_offset = int(round(critical_temp - Trip_Temp_C))
                 regs[power_source]['MSR_TEMPERATURE_TARGET'] = trip_offset << 24
             else:
-                print('[I] {:s} trip temperature is disabled in config.'.format(power_source))
+                log('[I] {:s} trip temperature is disabled in config.'.format(power_source))
 
         power_unit = get_power_unit()
 
@@ -453,26 +473,26 @@ def calc_reg_values(platform_info, config):
             cur_pkg_power_limits = get_cur_pkg_power_limits()
             if PL1_Tdp_W is None:
                 PL1 = cur_pkg_power_limits['PL1']
-                print('[I] {:s} PL1_Tdp_W disabled in config.'.format(power_source))
+                log('[I] {:s} PL1_Tdp_W disabled in config.'.format(power_source))
             else:
                 PL1 = int(round(PL1_Tdp_W / power_unit))
 
             if PL1_Duration_s is None:
                 TW1 = cur_pkg_power_limits['TW1']
-                print('[I] {:s} PL1_Duration_s disabled in config.'.format(power_source))
+                log('[I] {:s} PL1_Duration_s disabled in config.'.format(power_source))
             else:
                 Y, Z = calc_time_window_vars(PL1_Duration_s)
                 TW1 = Y | (Z << 5)
 
             if PL2_Tdp_W is None:
                 PL2 = cur_pkg_power_limits['PL2']
-                print('[I] {:s} PL2_Tdp_W disabled in config.'.format(power_source))
+                log('[I] {:s} PL2_Tdp_W disabled in config.'.format(power_source))
             else:
                 PL2 = int(round(PL2_Tdp_W / power_unit))
 
             if PL2_Duration_s is None:
                 TW2 = cur_pkg_power_limits['TW2']
-                print('[I] {:s} PL2_Duration_s disabled in config.'.format(power_source))
+                log('[I] {:s} PL2_Duration_s disabled in config.'.format(power_source))
             else:
                 Y, Z = calc_time_window_vars(PL2_Duration_s)
                 TW2 = Y | (Z << 5)
@@ -481,15 +501,15 @@ def calc_reg_values(platform_info, config):
                 PL1 | (1 << 15) | (1 << 16) | (TW1 << 17) | (PL2 << 32) | (1 << 47) | (TW2 << 49)
             )
         else:
-            print('[I] {:s} package power limits are disabled in config.'.format(power_source))
+            log('[I] {:s} package power limits are disabled in config.'.format(power_source))
 
         # cTDP
         c_tdp_target_value = config.getint(power_source, 'cTDP', fallback=None)
         if c_tdp_target_value is not None:
             if platform_info['feature_programmable_tdp_limit'] != 1:
-                print("[W] cTDP setting not supported by this CPU")
+                log("[W] cTDP setting not supported by this CPU")
             elif platform_info['number_of_additional_tdp_profiles'] < c_tdp_target_value:
-                print("[W] the configured cTDP profile is not supported by this CPU")
+                log("[W] the configured cTDP profile is not supported by this CPU")
             else:
                 valid_c_tdp_target_value = max(0, c_tdp_target_value)
                 regs[power_source]['MSR_CONFIG_TDP_CONTROL'] = valid_c_tdp_target_value
@@ -505,7 +525,7 @@ def set_hwp():
     if args.debug:
         read_value = readmsr(0x774, from_bit=24, to_bit=31)[0]
         match = OK if HWP_VALUE == read_value else ERR
-        print('[D] HWP - write "{:#02x}" - read "{:#02x}" - match {}'.format(HWP_VALUE, read_value, match))
+        log('[D] HWP - write "{:#02x}" - read "{:#02x}" - match {}'.format(HWP_VALUE, read_value, match))
 
 
 def power_thread(config, regs, exit_event):
@@ -518,12 +538,12 @@ def power_thread(config, regs, exit_event):
 
     next_hwp_write = 0
     while not exit_event.is_set():
-        # print thermal status
+        # log thermal status
         if args.debug:
             thermal_status = get_reset_thermal_status()
             for index, core_thermal_status in enumerate(thermal_status):
                 for key, value in core_thermal_status.items():
-                    print('[D] core {} thermal status: {} = {}'.format(index, key.replace("_", " "), value))
+                    log('[D] core {} thermal status: {} = {}'.format(index, key.replace("_", " "), value))
 
         # switch back to sysfs polling
         if power['method'] == 'polling':
@@ -536,7 +556,7 @@ def power_thread(config, regs, exit_event):
             if args.debug:
                 read_value = readmsr(0x1A2, 24, 29, flatten=True)
                 match = OK if write_value >> 24 == read_value else ERR
-                print(
+                log(
                     '[D] TEMPERATURE_TARGET - write {:#x} - read {:#x} - match {}'.format(
                         write_value >> 24, read_value, match
                     )
@@ -549,7 +569,7 @@ def power_thread(config, regs, exit_event):
             if args.debug:
                 read_value = readmsr(0x64B, 0, 1, flatten=True)
                 match = OK if write_value == read_value else ERR
-                print(
+                log(
                     '[D] CONFIG_TDP_CONTROL - write {:#x} - read {:#x} - match {}'.format(
                         write_value, read_value, match
                     )
@@ -561,7 +581,7 @@ def power_thread(config, regs, exit_event):
         if args.debug:
             read_value = readmsr(0x610, 0, 55, flatten=True)
             match = OK if write_value == read_value else ERR
-            print(
+            log(
                 '[D] MSR PACKAGE_POWER_LIMIT - write {:#x} - read {:#x} - match {}'.format(
                     write_value, read_value, match
                 )
@@ -573,7 +593,7 @@ def power_thread(config, regs, exit_event):
             if args.debug:
                 read_value = mchbar_mmio.read32(0) | (mchbar_mmio.read32(4) << 32)
                 match = OK if write_value == read_value else ERR
-                print(
+                log(
                     '[D] MCHBAR PACKAGE_POWER_LIMIT - write {:#x} - read {:#x} - match {}'.format(
                         write_value, read_value, match
                     )
@@ -615,7 +635,7 @@ def check_kernel():
         except (subprocess.CalledProcessError, IOError):
             pass
     if kernel_config is None:
-        print('[W] Unable to obtain and validate kernel config.')
+        log('[W] Unable to obtain and validate kernel config.')
         return
     elif not re.search('CONFIG_DEVMEM=y', kernel_config):
         warning('Bad kernel config: you need CONFIG_DEVMEM=y.')
@@ -649,7 +669,7 @@ def check_cpu():
         if cpuinfo['cpu family'] != 6 or cpu_model is None:
             fatal('Your CPU model is not supported.')
 
-        print('[I] Detected CPU architecture: Intel {:s}'.format(cpu_model))
+        log('[I] Detected CPU architecture: Intel {:s}'.format(cpu_model))
     except:
         fatal('Unable to identify CPU model.')
 
@@ -677,13 +697,13 @@ def monitor(exit_event, wait):
 
     undervolt_values = get_undervolt(convert=True)
     undervolt_output = ' | '.join('{:s}: {:.2f} mV'.format(plane, undervolt_values[plane]) for plane in VOLTAGE_PLANES)
-    print('[D] Undervolt offsets: {:s}'.format(undervolt_output))
+    log('[D] Undervolt offsets: {:s}'.format(undervolt_output))
 
     iccmax_values = get_icc_max(convert=True)
     iccmax_output = ' | '.join('{:s}: {:.2f} A'.format(plane, iccmax_values[plane]) for plane in CURRENT_PLANES)
-    print('[D] IccMax: {:s}'.format(iccmax_output))
+    log('[D] IccMax: {:s}'.format(iccmax_output))
 
-    print('[D] Realtime monitoring of throttling causes:\n')
+    log('[D] Realtime monitoring of throttling causes:\n')
     while not exit_event.is_set():
         value = readmsr(IA32_THERM_STATUS, from_bit=0, to_bit=15, cpu=0)
         offsets = {'Thermal': 0, 'Power': 10, 'Current': 12, 'Cross-domain (e.g. GPU)': 14}
@@ -701,7 +721,11 @@ def monitor(exit_event, wait):
             )
             stats2[power_plane] = '{:.1f} W'.format(energy_w)
         output2 = ('{:s}: {:s}'.format(label, stats2[label]) for label in stats2)
-        print('[{}] {}  ||  {}{}'.format(power['source'], ' - '.join(output), ' - '.join(output2), ' ' * 10), end='\r')
+        terminator = '\n' if args.log else '\r'
+        log(
+            '[{}] {}  ||  {}{}'.format(power['source'], ' - '.join(output), ' - '.join(output2), ' ' * 10),
+            end=terminator,
+        )
         exit_event.wait(wait)
 
 
@@ -721,20 +745,28 @@ def main():
     )
     parser.add_argument('--config', default='/etc/lenovo_fix.conf', help='override default config file path')
     parser.add_argument('--force', action='store_true', help='bypass compatibility checks (EXPERTS only)')
+    parser.add_argument('--log', metavar='/path/to/file', help='log to file instead of stdout')
     args = parser.parse_args()
+
+    if args.log:
+        try:
+            args.log = open(args.log, 'w')
+        except:
+            args.log = None
+            fatal('Unable to write to the log file!')
 
     if not args.force:
         check_kernel()
         check_cpu()
 
-    print('[I] Loading config file.')
+    log('[I] Loading config file.')
     config = load_config()
     power['source'] = 'BATTERY' if is_on_battery(config) else 'AC'
 
     platform_info = get_cpu_platform_info()
     if args.debug:
         for key, value in platform_info.items():
-            print('[D] cpu platform info: {} = {}'.format(key.replace("_", " "), value))
+            log('[D] cpu platform info: {} = {}'.format(key.replace("_", " "), value))
     regs = calc_reg_values(platform_info, config)
 
     if not config.getboolean('GENERAL', 'Enabled'):
@@ -778,7 +810,7 @@ def main():
         path="/org/freedesktop/UPower/devices/line_power_AC",
     )
 
-    print('[I] Starting main loop.')
+    log('[I] Starting main loop.')
 
     if args.monitor is not None:
         monitor_thread = Thread(target=monitor, args=(exit_event, args.monitor))
