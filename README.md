@@ -45,7 +45,7 @@ w /sys/devices/virtual/powercap/intel-rapl-mmio/intel-rapl-mmio:0/constraint_1_t
 
 ### Tested hardware
 Other users have confirmed that the tool is also working for these laptops:
-- Lenovo T480, T480s, X1C5, X1C6, T580, L480, T470, X280, ThinkPad Anniversary Edition 25, E590 w/ RX 550X, P43s
+- Lenovo T480, T480s, X1C5, X1C6, T580, L480, T470, X280, ThinkPad Anniversary Edition 25, E590 w/ RX 550X, P43s, E480
 - Dell XPS 9365, 9370, Latitude 7390 2-in-1
 - Microsoft Surface Book 2
 
