@@ -24,7 +24,7 @@ from gi.repository import GLib
 from mmio import MMIO, MMIOError
 
 DEFAULT_SYSFS_POWER_PATH = '/sys/class/power_supply/AC*/online'
-VOLTAGE_PLANES = {'CORE': 0, 'GPU': 1, 'CACHE': 2, 'UNCORE': 3, 'ANALOGIO': 4}
+VOLTAGE_PLANES = {'CORE': 0, 'GPU': 1, 'CACHE': 2, 'iGPU UNSLICE': 3, 'ANALOGIO': 4}
 CURRENT_PLANES = {'CORE': 0, 'GPU': 1, 'CACHE': 2}
 TRIP_TEMP_RANGE = [40, 97]
 UNDERVOLT_KEYS = ('UNDERVOLT', 'UNDERVOLT.AC', 'UNDERVOLT.BATTERY')
