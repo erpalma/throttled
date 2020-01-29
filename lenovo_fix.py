@@ -379,6 +379,10 @@ def load_config():
                 value = config.set(power_source, option, str(max(0.001, value)))
             elif option == 'Update_Rate_s':
                 fatal('The mandatory "Update_Rate_s" parameter is missing.')
+        for option in ('Disable_BDPROCHOT'):
+            value = config.boolean(power_source, option, fallback=None)
+            if value is None:
+                value = config.set(power_source, option, 0)
 
         trip_temp = config.getfloat(power_source, 'Trip_Temp_C', fallback=None)
         if trip_temp is not None:
