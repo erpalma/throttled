@@ -379,10 +379,6 @@ def load_config():
                 value = config.set(power_source, option, str(max(0.001, value)))
             elif option == 'Update_Rate_s':
                 fatal('The mandatory "Update_Rate_s" parameter is missing.')
-        for option in ('Disable_BDPROCHOT'):
-            value = config.boolean(power_source, option, fallback=None)
-            if value is None:
-                value = config.set(power_source, option, 0)
 
         trip_temp = config.getfloat(power_source, 'Trip_Temp_C', fallback=None)
         if trip_temp is not None:
@@ -517,6 +513,7 @@ def calc_reg_values(platform_info, config):
             else:
                 valid_c_tdp_target_value = max(0, c_tdp_target_value)
                 regs[power_source]['MSR_CONFIG_TDP_CONTROL'] = valid_c_tdp_target_value
+
     return regs
 
 
@@ -530,6 +527,18 @@ def set_hwp():
         read_value = readmsr(0x774, from_bit=24, to_bit=31)[0]
         match = OK if HWP_VALUE == read_value else ERR
         log('[D] HWP - write "{:#02x}" - read "{:#02x}" - match {}'.format(HWP_VALUE, read_value, match))
+
+
+def set_disable_bdprochot():
+    # Disable BDPROCHOT
+    cur_val = readmsr(0x1FC,flatten=True)
+    new_val = (cur_val & 0xFFFFFFFFFFFFFFFE)
+
+    writemsr(0x1FC, new_val)
+    if args.debug:
+        read_value = readmsr(0x1FC, from_bit=31, to_bit=31)[0]
+        match = OK if ~read_value else ERR
+        log('[D] BDPROCHOT - write "{:#02x}" - read "{:#02x}" - match {}'.format(0, read_value, match))
 
 
 def power_thread(config, regs, exit_event):
@@ -602,6 +611,11 @@ def power_thread(config, regs, exit_event):
                         write_value, read_value, match
                     )
                 )
+
+        # Disable BDPROCHOT
+        disable_bdprochot = config.getboolean(power['source'], 'Disable_BDPROCHOT', fallback=None)
+        if disable_bdprochot is not None:
+            set_disable_bdprochot()
 
         wait_t = config.getfloat(power['source'], 'Update_Rate_s')
         enable_hwp_mode = config.getboolean('AC', 'HWP_Mode', fallback=False)
