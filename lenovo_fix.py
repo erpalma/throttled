@@ -513,7 +513,6 @@ def calc_reg_values(platform_info, config):
             else:
                 valid_c_tdp_target_value = max(0, c_tdp_target_value)
                 regs[power_source]['MSR_CONFIG_TDP_CONTROL'] = valid_c_tdp_target_value
-
     return regs
 
 
