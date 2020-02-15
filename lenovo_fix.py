@@ -528,6 +528,18 @@ def set_hwp():
         log('[D] HWP - write "{:#02x}" - read "{:#02x}" - match {}'.format(HWP_VALUE, read_value, match))
 
 
+def set_disable_bdprochot():
+    # Disable BDPROCHOT
+    cur_val = readmsr(0x1FC,flatten=True)
+    new_val = (cur_val & 0xFFFFFFFFFFFFFFFE)
+
+    writemsr(0x1FC, new_val)
+    if args.debug:
+        read_value = readmsr(0x1FC, from_bit=31, to_bit=31)[0]
+        match = OK if ~read_value else ERR
+        log('[D] BDPROCHOT - write "{:#02x}" - read "{:#02x}" - match {}'.format(0, read_value, match))
+
+
 def power_thread(config, regs, exit_event):
     try:
         mchbar_mmio = MMIO(0xFED159A0, 8)
@@ -598,6 +610,11 @@ def power_thread(config, regs, exit_event):
                         write_value, read_value, match
                     )
                 )
+
+        # Disable BDPROCHOT
+        disable_bdprochot = config.getboolean(power['source'], 'Disable_BDPROCHOT', fallback=None)
+        if disable_bdprochot is not None:
+            set_disable_bdprochot()
 
         wait_t = config.getfloat(power['source'], 'Update_Rate_s')
         enable_hwp_mode = config.getboolean('AC', 'HWP_Mode', fallback=False)
