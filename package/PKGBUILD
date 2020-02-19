@@ -13,9 +13,6 @@ backup=('etc/lenovo_fix.conf')
 source=("git+https://github.com/Hyper-KVM/throttled.git#branch=openrc")
 sha256sums=('SKIP')
 
-#prepare() {
-#  sed -i "s|ExecStart=.*|ExecStart=/usr/lib/$pkgname/lenovo_fix.py|" $pkgname-$pkgver/systemd/lenovo_fix.service
-#}
 
 build() {
   cd "${srcdir}/throttled/"
