@@ -1,18 +1,5 @@
 #!/usr/bin/openrc-run
-
 command="env python3 /usr/lib/throttled/lenovo_fix.py"
 pidfile=${pidfile-/var/run/lenovo_fix.pid}
 description="Stop Intel throttling"
-
-start() {
-    ebegin "Starting Throttled daemon"
-    start-stop-daemon --start --exec $command \
-       --make-pidfile --pidfile $pidfile -- ""
-    eend $? "Failed to start Throttled daemon"
-}
-
-stop() {
-    ebegin "Stopping Throttled daemon"
-    start-stop-daemon --quiet --stop --pidfile $pidfile --signal QUIT
-    eend $? "Failed to stop Throttled daemon"
-}
+command_background="yes"
