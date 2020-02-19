@@ -18,12 +18,12 @@ sha256sums=('SKIP')
 #}
 
 build() {
-  cd $pkgname-$pkgver
+  cd "${srcdir}/throttled/"
   python -m compileall *.py
 }
 
 package() {
-  cd throttled-$pkgver
+  cd "${srcdir}/throttled/"
   install -Dm644 etc/lenovo_fix.conf "$pkgdir"/etc/lenovo_fix.conf
   install -Dm644 systemd/lenovo_fix.service "$pkgdir"/usr/lib/systemd/system/lenovo_fix.service
   install -Dm755 lenovo_fix.py "$pkgdir"/usr/lib/$pkgname/lenovo_fix.py
