@@ -53,6 +53,13 @@ sudo systemctl enable --now lenovo_fix.service
 ```
 Thanks to *felixonmars* for creating and maintaining this package.
 
+### Artix Linux
+```
+makepkg -si
+sudo rc-update add lenovo_fix default
+sudo rc-service lenovo_fix start
+```
+
 ### Debian/Ubuntu
 ```
 sudo apt install git build-essential python3-dev libdbus-glib-1-dev libgirepository1.0-dev libcairo2-dev python3-venv python3-wheel
@@ -130,6 +137,12 @@ sv down lenovo_fix
 rm /var/service/lenovo_fix
 ```
 
+If you're using OpenRC instead of systemd:
+```
+rc-service lenovo_fix stop
+rc-update del lenovo_fix default
+```
+
 If you also need to remove the tool from the system:
 ```
 rm -rf /opt/lenovo_fix /etc/systemd/system/lenovo_fix.service
@@ -145,6 +158,7 @@ cd lenovo-throttling-fix
 git pull
 sudo ./install.sh
 sudo systemctl restart lenovo_fix.service
+OpenRC: sudo rc-service lenovo_fix restart
 ```
 
 ## Configuration
