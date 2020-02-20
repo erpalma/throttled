@@ -1,0 +1,5 @@
+#!/usr/bin/openrc-run
+command="env python3 /usr/lib/throttled/lenovo_fix.py"
+pidfile=${pidfile-/var/run/lenovo_fix.pid}
+description="Stop Intel throttling"
+command_background="yes"
