@@ -787,6 +787,7 @@ def main():
     regs = calc_reg_values(platform_info, config)
 
     if not config.getboolean('GENERAL', 'Enabled'):
+        log('[I] Throttled is disabled in config file... Quitting. :(')
         return
 
     exit_event = Event()
