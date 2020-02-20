@@ -6,6 +6,8 @@ if pidof systemd 2>&1 1>/dev/null; then
     systemctl stop lenovo_fix.service >/dev/null 2>&1
 elif pidof runit 2>&1 1>/dev/null; then
     sv down lenovo_fix >/dev/null 2>&1
+elif pidof openrc 2>&1 1>/dev/null; then
+    rc-service lenovo_fix stop >/dev/null 2>&1
 fi
 
 mkdir -p "$INSTALL_DIR" >/dev/null 2>&1
@@ -26,6 +28,10 @@ if pidof systemd 2>&1 1>/dev/null; then
 elif pidof runit 2>&1 1>/dev/null; then
     echo "Copying runit service file"
     cp -R runit/lenovo_fix /etc/sv/
+elif pidof openrc-init 2>&1 1>/dev/null; then
+    echo "Copying OpenRC service file"
+    cp -R openrc/lenovo_fix /etc/init.d/lenovo_fix
+    chmod 755 /etc/init.d/lenovo_fix
 fi
 
 echo "Building virtualenv..."
@@ -44,6 +50,10 @@ elif pidof runit 2>&1 1>/dev/null; then
     echo "Enabling and starting runit service..."
     ln -sv /etc/sv/lenovo_fix /var/service/
     sv up lenovo_fix
+elif pidof openrc-init 2>&1 1>/dev/null; then
+    echo "Enabling and starting OpenRC service..."
+    rc-update add lenovo_fix default
+    rc-service lenovo_fix start
 fi
 
 echo "All done."
