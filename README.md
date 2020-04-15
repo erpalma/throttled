@@ -112,6 +112,14 @@ systemctl enable throttled.service
 systemctl start throttled.service
 ```
 
+### Solus
+```
+sudo eopkg it -c system.devel
+sudo eopkg it git python3-devel dbus-glib-devel python3-cairo-devel libcairo-devel python3-gobject-devel
+git clone https://github.com/erpalma/lenovo-throttling-fix.git
+sudo ./lenovo-throttling-fix/install.sh
+```
+
 ### Void
 
 The installation itself will create a runit service as lenovo_fix, enable it and start it. Before installation, make sure dbus is running `sv up dbus`.
