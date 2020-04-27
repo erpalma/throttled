@@ -288,6 +288,11 @@ This is an example output:
 [D] core 0 thermal status: reading valid = 1
 .....
 ```
+## A word about manufacturer provided tooling
+Tools provided by your notebook manufacturer like [Dell Power Manager](https://www.dell.com/support/contents/us/en/04/article/product-support/self-support-knowledgebase/software-and-downloads/dell-power-manager) tend to persist their settings to the system board. If you ever had it running under Windows and activated a cool/quiet/silent/saving profile, this setting will still be active when running linux, throttling your system.
+
+> On my Dell Latitude 5591, not even a BIOS reset to manufacturar default killed the active `Quiet` profile
+
 
 ## Disclaimer
 This script overrides the default values set by Lenovo. I'm using it without any problem, but it is still experimental so use it at your own risk.
