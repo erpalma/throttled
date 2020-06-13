@@ -35,7 +35,10 @@ On a lot of modern CPUs from Intel one can configure the TDP up or down based on
 A stripped down version of the python module `python-periphery` is now built-in and it is used for accessing the MCHBAR register by memory mapped I/O. You also need `dbus` and `gobject` python bindings for listening to dbus signals on resume from sleep/hibernate.
 
 ### Writing to MSR and PCI BAR
-Right now it is mandatory to **disable Secure Boot** (in BIOS) in order to avoid [Kernel Lockdown](https://lwn.net/Articles/706637/). In particular Lockdown restricts access to MSR and PCI BAR (via /dev/mem) which are required by this tool.
+Some time ago a feature called [Kernel Lockdown](https://lwn.net/Articles/706637/) was added to Linux. Kernel Lockdown automatically enables some security measures when Secure Boot is enabled, among them restricted access to MSR and PCI BAR via /dev/mem, which this tool requires. There are two ways to get around this: You can either disable Secure Boot in your firmware settings, or disable the Kernel Lockdown LSM.
+
+The LSM can be disabled this way: Check the contents of the file `/sys/kernel/lockdown/lsm` (example contents: `capability,lockdown,yama`). Take the contents of the file, remove `lockdown` and add the rest as a kernel parameter, like this: `lsm=capability,yama`. Reboot and Kernel Lockdown will be disabled!
+
 Note that some kernels (e.g. [linux-hardened](https://www.archlinux.org/packages/extra/x86_64/linux-hardened/)) will prevent from writing to `/dev/mem` too. Specifically, you need a kernel with `CONFIG_DEVMEM` and `CONFIG_X86_MSR` set.
 
 ### Thermald
