@@ -39,6 +39,7 @@ cp -n requirements.txt lenovo_fix.py mmio.py "$INSTALL_DIR"
 cd "$INSTALL_DIR"
 /usr/bin/python3 -m venv venv
 . venv/bin/activate
+pip install wheel
 pip install -r requirements.txt
 
 if pidof systemd 2>&1 1>/dev/null; then
