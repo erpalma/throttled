@@ -541,6 +541,10 @@ def set_disable_bdprochot():
         log('[D] BDPROCHOT - write "{:#02x}" - read "{:#02x}" - match {}'.format(0, read_value, match))
 
 
+def get_config_write_time():
+    return os.stat(args.config).st_mtime
+
+
 def power_thread(config, regs, exit_event):
     try:
         mchbar_mmio = MMIO(0xFED159A0, 8)
@@ -550,6 +554,7 @@ def power_thread(config, regs, exit_event):
         mchbar_mmio = None
 
     next_hwp_write = 0
+    last_config_write_time = get_config_write_time()
     while not exit_event.is_set():
         # log thermal status
         if args.debug:
@@ -557,6 +562,13 @@ def power_thread(config, regs, exit_event):
             for index, core_thermal_status in enumerate(thermal_status):
                 for key, value in core_thermal_status.items():
                     log('[D] core {} thermal status: {} = {}'.format(index, key.replace("_", " "), value))
+
+        # Reload config when modified
+        config_write_time = get_config_write_time()
+        if last_config_write_time != config_write_time:
+            last_config_write_time = config_write_time
+            config = load_config()
+            log('[I] Reloading changes.')
 
         # switch back to sysfs polling
         if power['method'] == 'polling':
