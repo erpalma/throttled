@@ -542,7 +542,10 @@ def set_disable_bdprochot():
 
 
 def get_config_write_time():
-    return os.stat(args.config).st_mtime
+    try:
+        return os.stat(args.config).st_mtime
+    except FileNotFoundError:
+        return None
 
 
 def power_thread(config, regs, exit_event):
@@ -563,9 +566,9 @@ def power_thread(config, regs, exit_event):
                 for key, value in core_thermal_status.items():
                     log('[D] core {} thermal status: {} = {}'.format(index, key.replace("_", " "), value))
 
-        # Reload config when modified
+        # Reload config when modified (unless it no longer exists)
         config_write_time = get_config_write_time()
-        if last_config_write_time != config_write_time:
+        if config_write_time and last_config_write_time != config_write_time:
             last_config_write_time = config_write_time
             config = load_config()
             log('[I] Reloading changes.')
