@@ -30,7 +30,8 @@ TRIP_TEMP_RANGE = [40, 97]
 UNDERVOLT_KEYS = ('UNDERVOLT', 'UNDERVOLT.AC', 'UNDERVOLT.BATTERY')
 ICCMAX_KEYS = ('ICCMAX', 'ICCMAX.AC', 'ICCMAX.BATTERY')
 power = {'source': None, 'method': 'polling'}
-HWP_VALUE = 0x20
+HWP_PERFORMANCE_VALUE = 0x20
+HWP_DEFAULT_VALUE = 0x80
 HWP_INTERVAL = 60
 
 
@@ -517,16 +518,17 @@ def calc_reg_values(platform_info, config):
     return regs
 
 
-def set_hwp():
+def set_hwp(performance_mode):
     # set HWP energy performance preference
     cur_val = readmsr(0x774, cpu=0)
-    new_val = (cur_val & 0xFFFFFFFF00FFFFFF) | (HWP_VALUE << 24)
+    hwp_mode = HWP_PERFORMANCE_VALUE if performance_mode else HWP_DEFAULT_VALUE
+    new_val = (cur_val & 0xFFFFFFFF00FFFFFF) | (hwp_mode << 24)
 
     writemsr(0x774, new_val)
     if args.debug:
         read_value = readmsr(0x774, from_bit=24, to_bit=31)[0]
-        match = OK if HWP_VALUE == read_value else ERR
-        log('[D] HWP - write "{:#02x}" - read "{:#02x}" - match {}'.format(HWP_VALUE, read_value, match))
+        match = OK if hwp_mode == read_value else ERR
+        log('[D] HWP - write "{:#02x}" - read "{:#02x}" - match {}'.format(hwp_mode, read_value, match))
 
 
 def set_disable_bdprochot():
@@ -628,7 +630,7 @@ def power_thread(config, regs, exit_event):
                 or (power['method'] == 'polling' and not is_on_battery(config))
             )
         ):
-            set_hwp()
+            set_hwp(enable_hwp_mode)
             next_hwp_write = time() + HWP_INTERVAL
 
         else:
@@ -791,13 +793,14 @@ def main():
         log('[I] Throttled is disabled in config file... Quitting. :(')
         return
 
+    undervolt(config)
+    set_icc_max(config)
+    set_hwp(config.getboolean('AC', 'HWP_Mode', fallback=False))
+
     exit_event = Event()
     thread = Thread(target=power_thread, args=(config, regs, exit_event))
     thread.daemon = True
     thread.start()
-
-    undervolt(config)
-    set_icc_max(config)
 
     # handle dbus events for applying undervolt/IccMax on resume from sleep/hybernate
     def handle_sleep_callback(sleeping):
