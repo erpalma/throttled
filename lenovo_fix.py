@@ -543,6 +543,23 @@ def set_disable_bdprochot():
         log('[D] BDPROCHOT - write "{:#02x}" - read "{:#02x}" - match {}'.format(0, read_value, match))
 
 
+def get_config_write_time():
+    try:
+        return os.stat(args.config).st_mtime
+    except FileNotFoundError:
+        return None
+
+
+def reload_config():
+    config = load_config()
+    regs = calc_reg_values(get_cpu_platform_info(), config)
+    undervolt(config)
+    set_icc_max(config)
+    set_hwp(config.getboolean('AC', 'HWP_Mode', fallback=False))
+    log('[I] Reloading changes.')
+    return config, regs
+
+
 def power_thread(config, regs, exit_event):
     try:
         mchbar_mmio = MMIO(0xFED159A0, 8)
@@ -552,6 +569,8 @@ def power_thread(config, regs, exit_event):
         mchbar_mmio = None
 
     next_hwp_write = 0
+    last_config_write_time = get_config_write_time() \
+        if config.getboolean('GENERAL', 'Autoreload', fallback=False) else None
     while not exit_event.is_set():
         # log thermal status
         if args.debug:
@@ -559,6 +578,13 @@ def power_thread(config, regs, exit_event):
             for index, core_thermal_status in enumerate(thermal_status):
                 for key, value in core_thermal_status.items():
                     log('[D] core {} thermal status: {} = {}'.format(index, key.replace("_", " "), value))
+
+        # Reload config on changes (unless it's deleted)
+        if config.getboolean('GENERAL', 'Autoreload', fallback=False):
+            config_write_time = get_config_write_time()
+            if config_write_time and last_config_write_time != config_write_time:
+                last_config_write_time = config_write_time
+                config, regs = reload_config()
 
         # switch back to sysfs polling
         if power['method'] == 'polling':
