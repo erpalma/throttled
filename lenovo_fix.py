@@ -569,7 +569,8 @@ def power_thread(config, regs, exit_event):
         mchbar_mmio = None
 
     next_hwp_write = 0
-    last_config_write_time = get_config_write_time()
+    last_config_write_time = get_config_write_time() \
+        if config.getboolean('GENERAL', 'Autoreload', fallback=False) else None
     while not exit_event.is_set():
         # log thermal status
         if args.debug:
@@ -578,11 +579,12 @@ def power_thread(config, regs, exit_event):
                 for key, value in core_thermal_status.items():
                     log('[D] core {} thermal status: {} = {}'.format(index, key.replace("_", " "), value))
 
-        # Reload config when modified (unless it no longer exists)
-        config_write_time = get_config_write_time()
-        if config_write_time and last_config_write_time != config_write_time:
-            last_config_write_time = config_write_time
-            config, regs = reload_config()
+        # Reload config on changes (unless it's deleted)
+        if config.getboolean('GENERAL', 'Autoreload', fallback=False):
+            config_write_time = get_config_write_time()
+            if config_write_time and last_config_write_time != config_write_time:
+                last_config_write_time = config_write_time
+                config, regs = reload_config()
 
         # switch back to sysfs polling
         if power['method'] == 'polling':
