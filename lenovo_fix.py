@@ -555,6 +555,7 @@ def reload_config():
     regs = calc_reg_values(get_cpu_platform_info(), config)
     undervolt(config)
     set_icc_max(config)
+    set_hwp(config.getboolean('AC', 'HWP_Mode', fallback=False))
     log('[I] Reloading changes.')
     return config, regs
 
