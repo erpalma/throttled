@@ -6,8 +6,6 @@ Type=simple
 ExecStart=/opt/lenovo_fix/venv/bin/python3 /opt/lenovo_fix/lenovo_fix.py
 # Setting PYTHONUNBUFFERED is necessary to see the output of this service in the journal
 Environment=PYTHONUNBUFFERED=1
-StandardOutput=syslog
-StandardError=syslog
 
 [Install]
 WantedBy=multi-user.target
