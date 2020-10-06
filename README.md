@@ -39,6 +39,12 @@ Some time ago a feature called [Kernel Lockdown](https://lwn.net/Articles/706637
 
 The LSM can be disabled this way: Check the contents of the file `/sys/kernel/security/lsm` (example contents: `capability,lockdown,yama`). Take the contents of the file, remove `lockdown` and add the rest as a kernel parameter, like this: `lsm=capability,yama`. Reboot and Kernel Lockdown will be disabled!
 
+As of Linux 5.9, kernel messages will be logged whenever the script writes to MSR registers. These aren't a problem for now, but there's some indication that future kernels may restrict MSR writes from userspace by default. This is being tracked by issue #215. The messages will look something like:
+```
+[  324.833543] msr: Write to unrecognized MSR 0x1a2 by python3
+               Please report to x86@kernel.org
+```
+
 Note that some kernels (e.g. [linux-hardened](https://www.archlinux.org/packages/extra/x86_64/linux-hardened/)) will prevent from writing to `/dev/mem` too. Specifically, you need a kernel with `CONFIG_DEVMEM` and `CONFIG_X86_MSR` set.
 
 ### Thermald
