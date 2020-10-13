@@ -78,7 +78,7 @@ supported_cpus = {
     'Kaby Lake (R)': (0x8E, 0x9E),
     'Coffee Lake': (0x9E,),
     'Cannon Lake': (0x66,),
-    'Comet Lake': (0xA6,),
+    'Comet Lake': (0xA5, 0xA6),
 }
 
 
