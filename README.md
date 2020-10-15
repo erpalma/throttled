@@ -73,7 +73,7 @@ sudo rc-service lenovo_fix start
 ```
 sudo apt install git build-essential python3-dev libdbus-glib-1-dev libgirepository1.0-dev libcairo2-dev python3-venv python3-wheel
 git clone https://github.com/erpalma/throttled.git
-sudo ./lenovo-throttling-fix/install.sh
+sudo ./throttled/install.sh
 ```
 If you own a X1C6 you can also check a tutorial for Ubuntu 18.04 [here](https://mensfeld.pl/2018/05/lenovo-thinkpad-x1-carbon-6th-gen-2018-ubuntu-18-04-tweaks/).
 
@@ -100,7 +100,7 @@ If you prefer to install from source, you can use the following commands.
 ```
 sudo dnf install python3-cairo-devel cairo-gobject-devel gobject-introspection-devel dbus-glib-devel python3-devel make libX11-devel
 git clone https://github.com/erpalma/throttled.git
-sudo ./lenovo-throttling-fix/install.sh
+sudo ./throttled/install.sh
 ```
 Feedback about Fedora installation is welcome.
 
@@ -109,7 +109,7 @@ User *brycecordill* reported that the following dependencies are required for in
 ```
 sudo zypper install gcc make python3-devel dbus-1-glib-devel python3-cairo-devel cairo-devel python3-gobject-cairo gobject-introspection-devel
 git clone https://github.com/erpalma/throttled.git
-sudo ./lenovo-throttling-fix/install.sh
+sudo ./throttled/install.sh
 ```
 
 ### Gentoo
@@ -126,7 +126,7 @@ systemctl start throttled.service
 sudo eopkg it -c system.devel
 sudo eopkg it git python3-devel dbus-glib-devel python3-cairo-devel libcairo-devel python3-gobject-devel
 git clone https://github.com/erpalma/throttled.git
-sudo ./lenovo-throttling-fix/install.sh
+sudo ./throttled/install.sh
 ```
 
 ### Void
@@ -138,7 +138,7 @@ sudo xbps-install -Sy gcc git python3-devel dbus-glib-devel libgirepository-deve
 
 git clone https://github.com/erpalma/throttled.git
 
-sudo ./lenovo-throttling-fix/install.sh
+sudo ./throttled/install.sh
 ```
 
 ### Uninstall
@@ -171,7 +171,7 @@ On Arch you should probably use `pacman -R lenovo-throttling-fix-git` instead.
 ### Update
 If you update the tool you should manually check your config file for changes or additional features and modify it accordingly. The update process is then as simple as:
 ```
-cd lenovo-throttling-fix
+cd throttled
 git pull
 sudo ./install.sh
 sudo systemctl restart lenovo_fix.service
