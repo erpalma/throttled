@@ -30,6 +30,22 @@ TRIP_TEMP_RANGE = [40, 97]
 UNDERVOLT_KEYS = ('UNDERVOLT', 'UNDERVOLT.AC', 'UNDERVOLT.BATTERY')
 ICCMAX_KEYS = ('ICCMAX', 'ICCMAX.AC', 'ICCMAX.BATTERY')
 power = {'source': None, 'method': 'polling'}
+MSR_DICT = {
+    'MSR_PLATFORM_INFO': 0xCE,
+    'MSR_OC_MAILBOX': 0x150,
+    'IA32_PERF_STATUS': 0x198,
+    'IA32_THERM_STATUS': 0x19C,
+    'MSR_TEMPERATURE_TARGET': 0x1A2,
+    'MSR_POWER_CTL': 0x1FC,
+    'MSR_RAPL_POWER_UNIT': 0x606,
+    'MSR_PKG_POWER_LIMIT': 0x610,
+    'MSR_INTEL_PKG_ENERGY_STATUS': 0x611,
+    'MSR_DRAM_ENERGY_STATUS': 0x619,
+    'MSR_PP1_ENERGY_STATUS': 0x641,
+    'MSR_CONFIG_TDP_CONTROL': 0x64B,
+    'IA32_HWP_REQUEST': 0x774,
+}
+
 HWP_PERFORMANCE_VALUE = 0x20
 HWP_DEFAULT_VALUE = 0x80
 HWP_INTERVAL = 60
@@ -133,7 +149,7 @@ def writemsr(msr, val):
     try:
         for addr in msr_list:
             f = os.open(addr, os.O_WRONLY)
-            os.lseek(f, msr, os.SEEK_SET)
+            os.lseek(f, MSR_DICT[msr], os.SEEK_SET)
             os.write(f, struct.pack('Q', val))
             os.close(f)
     except (IOError, OSError) as e:
@@ -161,7 +177,7 @@ def readmsr(msr, from_bit=0, to_bit=63, cpu=None, flatten=False):
         output = []
         for addr in msr_list:
             f = os.open(addr, os.O_RDONLY)
-            os.lseek(f, msr, os.SEEK_SET)
+            os.lseek(f, MSR_DICT[msr], os.SEEK_SET)
             val = struct.unpack('Q', os.read(f, 8))[0]
             os.close(f)
             output.append(get_value_for_bits(val, from_bit, to_bit))
@@ -213,7 +229,7 @@ def is_on_battery(config):
 
 
 def get_cpu_platform_info():
-    features_msr_value = readmsr(0xCE, cpu=0)
+    features_msr_value = readmsr('MSR_PLATFORM_INFO', cpu=0)
     cpu_platform_info = {}
     for key, value in platform_info_bits.items():
         cpu_platform_info[key] = int(get_value_for_bits(features_msr_value, value[0], value[1]))
@@ -222,7 +238,7 @@ def get_cpu_platform_info():
 
 def get_reset_thermal_status():
     # read thermal status
-    thermal_status_msr_value = readmsr(0x19C)
+    thermal_status_msr_value = readmsr('IA32_THERM_STATUS')
     thermal_status = []
     for core in range(cpu_count()):
         thermal_status_core = {}
@@ -230,29 +246,29 @@ def get_reset_thermal_status():
             thermal_status_core[key] = int(get_value_for_bits(thermal_status_msr_value[core], value[0], value[1]))
         thermal_status.append(thermal_status_core)
     # reset log bits
-    writemsr(0x19C, 0)
+    writemsr('IA32_THERM_STATUS', 0)
     return thermal_status
 
 
 def get_time_unit():
     # 0.000977 is the time unit of my CPU
     # TODO formula might be different for other CPUs
-    return 1.0 / 2 ** readmsr(0x606, 16, 19, cpu=0)
+    return 1.0 / 2 ** readmsr('MSR_RAPL_POWER_UNIT', 16, 19, cpu=0)
 
 
 def get_power_unit():
     # 0.125 is the power unit of my CPU
     # TODO formula might be different for other CPUs
-    return 1.0 / 2 ** readmsr(0x606, 0, 3, cpu=0)
+    return 1.0 / 2 ** readmsr('MSR_RAPL_POWER_UNIT', 0, 3, cpu=0)
 
 
 def get_critical_temp():
     # the critical temperature for my CPU is 100 'C
-    return readmsr(0x1A2, 16, 23, cpu=0)
+    return readmsr('MSR_TEMPERATURE_TARGET', 16, 23, cpu=0)
 
 
 def get_cur_pkg_power_limits():
-    value = readmsr(0x610, 0, 55, flatten=True)
+    value = readmsr('MSR_PKG_POWER_LIMIT', 0, 55, flatten=True)
     return {
         'PL1': get_value_for_bits(value, 0, 14),
         'TW1': get_value_for_bits(value, 17, 23),
@@ -282,8 +298,7 @@ def calc_undervolt_msr(plane, offset):
 
 
 def calc_undervolt_mv(msr_value):
-    """Return the offset voltage (in mV) from the given raw MSR 150h value.
-    """
+    """Return the offset voltage (in mV) from the given raw MSR 150h value."""
     offset = (msr_value & 0xFFE00000) >> 21
     offset = offset if offset <= 0x400 else -(0x800 - offset)
     return int(round(offset / 1.024))
@@ -293,8 +308,8 @@ def get_undervolt(plane=None, convert=False):
     planes = [plane] if plane in VOLTAGE_PLANES else VOLTAGE_PLANES
     out = {}
     for plane in planes:
-        writemsr(0x150, 0x8000001000000000 | (VOLTAGE_PLANES[plane] << 40))
-        read_value = readmsr(0x150, flatten=True) & 0xFFFFFFFF
+        writemsr('MSR_OC_MAILBOX', 0x8000001000000000 | (VOLTAGE_PLANES[plane] << 40))
+        read_value = readmsr('MSR_OC_MAILBOX', flatten=True) & 0xFFFFFFFF
         out[plane] = calc_undervolt_mv(read_value) if convert else read_value
 
     return out
@@ -306,7 +321,7 @@ def undervolt(config):
             'UNDERVOLT.{:s}'.format(power['source']), plane, fallback=config.getfloat('UNDERVOLT', plane, fallback=0.0)
         )
         write_value = calc_undervolt_msr(plane, write_offset_mv)
-        writemsr(0x150, write_value)
+        writemsr('MSR_OC_MAILBOX', write_value)
         if args.debug:
             write_value &= 0xFFFFFFFF
             read_value = get_undervolt(plane)[plane]
@@ -330,8 +345,7 @@ def calc_icc_max_msr(plane, current):
 
 
 def calc_icc_max_amp(msr_value):
-    """Return the max current (in A) from the given raw MSR 150h value.
-    """
+    """Return the max current (in A) from the given raw MSR 150h value."""
     return (msr_value & 0x3FF) / 4.0
 
 
@@ -339,8 +353,8 @@ def get_icc_max(plane=None, convert=False):
     planes = [plane] if plane in CURRENT_PLANES else CURRENT_PLANES
     out = {}
     for plane in planes:
-        writemsr(0x150, 0x8000001600000000 | (CURRENT_PLANES[plane] << 40))
-        read_value = readmsr(0x150, flatten=True) & 0x3FF
+        writemsr('MSR_OC_MAILBOX', 0x8000001600000000 | (CURRENT_PLANES[plane] << 40))
+        read_value = readmsr('MSR_OC_MAILBOX', flatten=True) & 0x3FF
         out[plane] = calc_icc_max_amp(read_value) if convert else read_value
 
     return out
@@ -354,7 +368,7 @@ def set_icc_max(config):
             )
             if write_current_amp > 0:
                 write_value = calc_icc_max_msr(plane, write_current_amp)
-                writemsr(0x150, write_value)
+                writemsr('MSR_OC_MAILBOX', write_value)
                 if args.debug:
                     write_value &= 0x3FF
                     read_value = get_icc_max(plane)[plane]
@@ -520,25 +534,25 @@ def calc_reg_values(platform_info, config):
 
 def set_hwp(performance_mode):
     # set HWP energy performance preference
-    cur_val = readmsr(0x774, cpu=0)
+    cur_val = readmsr('IA32_HWP_REQUEST', cpu=0)
     hwp_mode = HWP_PERFORMANCE_VALUE if performance_mode else HWP_DEFAULT_VALUE
     new_val = (cur_val & 0xFFFFFFFF00FFFFFF) | (hwp_mode << 24)
 
-    writemsr(0x774, new_val)
+    writemsr('IA32_HWP_REQUEST', new_val)
     if args.debug:
-        read_value = readmsr(0x774, from_bit=24, to_bit=31)[0]
+        read_value = readmsr('IA32_HWP_REQUEST', from_bit=24, to_bit=31)[0]
         match = OK if hwp_mode == read_value else ERR
         log('[D] HWP - write "{:#02x}" - read "{:#02x}" - match {}'.format(hwp_mode, read_value, match))
 
 
 def set_disable_bdprochot():
     # Disable BDPROCHOT
-    cur_val = readmsr(0x1FC, flatten=True)
+    cur_val = readmsr('MSR_POWER_CTL', flatten=True)
     new_val = cur_val & 0xFFFFFFFFFFFFFFFE
 
-    writemsr(0x1FC, new_val)
+    writemsr('MSR_POWER_CTL', new_val)
     if args.debug:
-        read_value = readmsr(0x1FC, from_bit=31, to_bit=31)[0]
+        read_value = readmsr('MSR_POWER_CTL', from_bit=31, to_bit=31)[0]
         match = OK if ~read_value else ERR
         log('[D] BDPROCHOT - write "{:#02x}" - read "{:#02x}" - match {}'.format(0, read_value, match))
 
@@ -569,8 +583,9 @@ def power_thread(config, regs, exit_event):
         mchbar_mmio = None
 
     next_hwp_write = 0
-    last_config_write_time = get_config_write_time() \
-        if config.getboolean('GENERAL', 'Autoreload', fallback=False) else None
+    last_config_write_time = (
+        get_config_write_time() if config.getboolean('GENERAL', 'Autoreload', fallback=False) else None
+    )
     while not exit_event.is_set():
         # log thermal status
         if args.debug:
@@ -593,9 +608,9 @@ def power_thread(config, regs, exit_event):
         # set temperature trip point
         if 'MSR_TEMPERATURE_TARGET' in regs[power['source']]:
             write_value = regs[power['source']]['MSR_TEMPERATURE_TARGET']
-            writemsr(0x1A2, write_value)
+            writemsr('MSR_TEMPERATURE_TARGET', write_value)
             if args.debug:
-                read_value = readmsr(0x1A2, 24, 29, flatten=True)
+                read_value = readmsr('MSR_TEMPERATURE_TARGET', 24, 29, flatten=True)
                 match = OK if write_value >> 24 == read_value else ERR
                 log(
                     '[D] TEMPERATURE_TARGET - write {:#x} - read {:#x} - match {}'.format(
@@ -606,9 +621,9 @@ def power_thread(config, regs, exit_event):
         # set cTDP
         if 'MSR_CONFIG_TDP_CONTROL' in regs[power['source']]:
             write_value = regs[power['source']]['MSR_CONFIG_TDP_CONTROL']
-            writemsr(0x64B, write_value)
+            writemsr('MSR_CONFIG_TDP_CONTROL', write_value)
             if args.debug:
-                read_value = readmsr(0x64B, 0, 1, flatten=True)
+                read_value = readmsr('MSR_CONFIG_TDP_CONTROL', 0, 1, flatten=True)
                 match = OK if write_value == read_value else ERR
                 log(
                     '[D] CONFIG_TDP_CONTROL - write {:#x} - read {:#x} - match {}'.format(
@@ -618,9 +633,9 @@ def power_thread(config, regs, exit_event):
 
         # set PL1/2 on MSR
         write_value = regs[power['source']]['MSR_PKG_POWER_LIMIT']
-        writemsr(0x610, write_value)
+        writemsr('MSR_PKG_POWER_LIMIT', write_value)
         if args.debug:
-            read_value = readmsr(0x610, 0, 55, flatten=True)
+            read_value = readmsr('MSR_PKG_POWER_LIMIT', 0, 55, flatten=True)
             match = OK if write_value == read_value else ERR
             log(
                 '[D] MSR PACKAGE_POWER_LIMIT - write {:#x} - read {:#x} - match {}'.format(
@@ -721,24 +736,17 @@ def check_cpu():
 
 
 def monitor(exit_event, wait):
-    IA32_THERM_STATUS = 0x19C
-    IA32_PERF_STATUS = 0x198
-    MSR_RAPL_POWER_UNIT = 0x606
-    MSR_INTEL_PKG_ENERGY_STATUS = 0x611
-    MSR_PP1_ENERGY_STATUS = 0x641
-    MSR_DRAM_ENERGY_STATUS = 0x619
-
     wait = max(0.1, wait)
-    rapl_power_unit = 0.5 ** readmsr(MSR_RAPL_POWER_UNIT, from_bit=8, to_bit=12, cpu=0)
+    rapl_power_unit = 0.5 ** readmsr('MSR_RAPL_POWER_UNIT', from_bit=8, to_bit=12, cpu=0)
     power_plane_msr = {
-        'Package': MSR_INTEL_PKG_ENERGY_STATUS,
-        'Graphics': MSR_PP1_ENERGY_STATUS,
-        'DRAM': MSR_DRAM_ENERGY_STATUS,
+        'Package': 'MSR_INTEL_PKG_ENERGY_STATUS',
+        'Graphics': 'MSR_PP1_ENERGY_STATUS',
+        'DRAM': 'MSR_DRAM_ENERGY_STATUS',
     }
     prev_energy = {
-        'Package': (readmsr(MSR_INTEL_PKG_ENERGY_STATUS, cpu=0) * rapl_power_unit, time()),
-        'Graphics': (readmsr(MSR_PP1_ENERGY_STATUS, cpu=0) * rapl_power_unit, time()),
-        'DRAM': (readmsr(MSR_DRAM_ENERGY_STATUS, cpu=0) * rapl_power_unit, time()),
+        'Package': (readmsr('MSR_INTEL_PKG_ENERGY_STATUS', cpu=0) * rapl_power_unit, time()),
+        'Graphics': (readmsr('MSR_PP1_ENERGY_STATUS', cpu=0) * rapl_power_unit, time()),
+        'DRAM': (readmsr('MSR_DRAM_ENERGY_STATUS', cpu=0) * rapl_power_unit, time()),
     }
 
     undervolt_values = get_undervolt(convert=True)
@@ -751,12 +759,12 @@ def monitor(exit_event, wait):
 
     log('[D] Realtime monitoring of throttling causes:\n')
     while not exit_event.is_set():
-        value = readmsr(IA32_THERM_STATUS, from_bit=0, to_bit=15, cpu=0)
+        value = readmsr('IA32_THERM_STATUS', from_bit=0, to_bit=15, cpu=0)
         offsets = {'Thermal': 0, 'Power': 10, 'Current': 12, 'Cross-domain (e.g. GPU)': 14}
         output = ('{:s}: {:s}'.format(cause, LIM if bool((value >> offsets[cause]) & 1) else OK) for cause in offsets)
 
         # ugly code, just testing...
-        vcore = readmsr(IA32_PERF_STATUS, from_bit=32, to_bit=47, cpu=0) / (2.0 ** 13) * 1000
+        vcore = readmsr('IA32_PERF_STATUS', from_bit=32, to_bit=47, cpu=0) / (2.0 ** 13) * 1000
         stats2 = {'VCore': '{:.0f} mV'.format(vcore)}
         for power_plane in ('Package', 'Graphics', 'DRAM'):
             energy_j = readmsr(power_plane_msr[power_plane], cpu=0) * rapl_power_unit
