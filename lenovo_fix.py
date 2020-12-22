@@ -196,6 +196,21 @@ def get_value_for_bits(val, from_bit=0, to_bit=63):
     return (val & mask) >> from_bit
 
 
+def set_msr_allow_writes():
+    log('[I] Trying to unlock MSR allow_writes.')
+    if not os.path.exists('/sys/module/msr'):
+        try:
+            subprocess.check_call(('modprobe', 'msr'))
+        except subprocess.CalledProcessError:
+            return
+    if os.path.exists('/sys/module/msr/parameters/allow_writes'):
+        try:
+            with open('/sys/module/msr/parameters/allow_writes', 'w') as f:
+                f.write('on')
+        except:
+            warning('Unable to set MSR allow_writes to on. You might experience warnings in kernel logs.')
+
+
 def is_on_battery(config):
     try:
         for path in glob.glob(config.get('GENERAL', 'Sysfs_Power_Path', fallback=DEFAULT_SYSFS_POWER_PATH)):
@@ -812,6 +827,8 @@ def main():
     if not args.force:
         check_kernel()
         check_cpu()
+
+    set_msr_allow_writes()
 
     log('[I] Loading config file.')
     config = load_config()
