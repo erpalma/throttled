@@ -182,7 +182,9 @@ def readmsr(msr, from_bit=0, to_bit=63, cpu=None, flatten=False):
             os.close(f)
             output.append(get_value_for_bits(val, from_bit, to_bit))
         if flatten:
-            return output[0] if len(set(output)) == 1 else output
+            if len(set(output)) > 1:
+                warning('Found multiple values for {:s} (0x{:x}). This should never happen.')
+            return output[0]
         return output[cpu] if cpu is not None else output
     except (IOError, OSError) as e:
         if e.errno == EPERM or e.errno == EACCES:
