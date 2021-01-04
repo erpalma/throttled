@@ -15,15 +15,15 @@ set -e
 
 cd "$(dirname "$0")"
 
-echo "Copying config file..."
+echo "Copying config file"
 if [ ! -f /etc/lenovo_fix.conf ]; then
 	cp etc/lenovo_fix.conf /etc
 else
-	echo "Config file already exists, skipping."
+	echo "Config file already exists, skipping"
 fi
 
 if pidof systemd 2>&1 1>/dev/null; then
-    echo "Copying systemd service file..."
+    echo "Copying systemd service file"
     cp systemd/lenovo_fix.service /etc/systemd/system
 elif pidof runit 2>&1 1>/dev/null; then
     echo "Copying runit service file"
@@ -34,8 +34,9 @@ elif pidof openrc-init 2>&1 1>/dev/null; then
     chmod 755 /etc/init.d/lenovo_fix
 fi
 
-echo "Building virtualenv..."
-cp -n requirements.txt lenovo_fix.py mmio.py "$INSTALL_DIR"
+echo "Copying core files"
+cp requirements.txt lenovo_fix.py mmio.py "$INSTALL_DIR"
+echo "Building virtualenv"
 cd "$INSTALL_DIR"
 /usr/bin/python3 -m venv venv
 . venv/bin/activate
@@ -43,16 +44,16 @@ pip install wheel
 pip install -r requirements.txt
 
 if pidof systemd 2>&1 1>/dev/null; then
-    echo "Enabling and starting systemd service..."
+    echo "Enabling and starting systemd service"
     systemctl daemon-reload
     systemctl enable lenovo_fix.service
     systemctl restart lenovo_fix.service
 elif pidof runit 2>&1 1>/dev/null; then
-    echo "Enabling and starting runit service..."
+    echo "Enabling and starting runit service"
     ln -sv /etc/sv/lenovo_fix /var/service/
     sv up lenovo_fix
 elif pidof openrc-init 2>&1 1>/dev/null; then
-    echo "Enabling and starting OpenRC service..."
+    echo "Enabling and starting OpenRC service"
     rc-update add lenovo_fix default
     rc-service lenovo_fix start
 fi
