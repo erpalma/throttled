@@ -7,7 +7,7 @@ On systems where the EC doesn't reset the values (ex: ASUS Zenbook UX430UNR), th
 
 ### Tested hardware
 Other users have confirmed that the tool is also working for these laptops:
-- Lenovo T480, T480s, X1C5, X1C6, T580, L490, L480, T470, X280, ThinkPad Anniversary Edition 25, E590 w/ RX 550X, P43s, E480, E580
+- Lenovo T480, T480s, X1C5, X1C6, T580, L490, L480, T470, X280, ThinkPad Anniversary Edition 25, E590 w/ RX 550X, P43s, E480, E580, T14 Gen 1
 - Dell XPS 9365, 9370, Latitude 7390 2-in-1
 - Microsoft Surface Book 2
 
@@ -21,7 +21,7 @@ I suggest you to use the excellent **[s-tui](https://github.com/amanusk/s-tui)**
 The tool supports **undervolting** the CPU by configuring voltage offsets for CPU, cache, GPU, System Agent and Analog I/O planes. The tool will re-apply undervolt on resume from standby and hibernate by listening to DBus signals. You can now either use the `UNDERVOLT` key in config to set global values or the `UNDERVOLT.AC` and `UNDERVOLT.BATTERY` keys to selectively set undervolt values for the two power profiles.
 
 ### IccMax (EXPERTS ONLY)
-The tool now supports overriding the **IccMax** by configuring the maximum allowed current for CPU, cache and GPU planes. The tool will re-apply IccMax on resume from standby and hibernate. You can now either use the `ICCMAX` key in config to set global values or the `ICCMAX.AC` and `ICCMAX.BATTERY` keys to selectively set current values for the two power profiles. **NOTE:** the values specified in the config file are the actual current limit of your system, so those are not a offset from the default values as for the undervolt. As such, you should first find your system default values with the `--monitor` command. 
+The tool now supports overriding the **IccMax** by configuring the maximum allowed current for CPU, cache and GPU planes. The tool will re-apply IccMax on resume from standby and hibernate. You can now either use the `ICCMAX` key in config to set global values or the `ICCMAX.AC` and `ICCMAX.BATTERY` keys to selectively set current values for the two power profiles. **NOTE:** the values specified in the config file are the actual current limit of your system, so those are not a offset from the default values as for the undervolt. As such, you should first find your system default values with the `--monitor` command.
 
 ### HWP override (EXPERIMENTAL)
 I have found that under load my CPU was not always hitting max turbo frequency, in particular when using one/two cores only. For instance, when running [prime95](https://www.mersenne.org/download/) (1 core, test #1) my CPU is limited to about 3500 MHz over the theoretical 4000 MHz maximum. The reason is the value for the HWP energy performance [hints](http://manpages.ubuntu.com/manpages/artful/man8/x86_energy_perf_policy.8.html). By default TLP sets this value to `balance_performance` on AC in order to reduce the power consumption/heat in idle. By setting this value to `performance` I was able to reach 3900 MHz in the prime95 single core test, achieving a +400 MHz boost. Since this value forces the CPU to full speed even during idle, a new experimental feature allows to automatically set HWP to performance under load and revert it to balanced when idle. This feature can be enabled (in AC mode *only*) by setting to `True` the `HWP_Mode` parameter in the lenovo_fix config file : https://github.com/erpalma/throttled/blob/master/etc/lenovo_fix.conf#L41 .
@@ -300,7 +300,7 @@ This is an example output:
 
 ## Autoreload
 Auto reload config on changes (unless it's deleted) can be enabled/disabled in the config
- 
+
 ```
 [General]
 Autoreload = True
