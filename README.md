@@ -7,7 +7,7 @@ On systems where the EC doesn't reset the values (ex: ASUS Zenbook UX430UNR), th
 
 ### Tested hardware
 Other users have confirmed that the tool is also working for these laptops:
-- Lenovo T480, T480s, X1C5, X1C6, T580, L490, L480, T470, X280, ThinkPad Anniversary Edition 25, E590 w/ RX 550X, P43s, E480, E580, T14 Gen 1
+- Lenovo T480, T480s, X1C5, X1C6, T580, L590, L490, L480, T470, X280, ThinkPad Anniversary Edition 25, E590 w/ RX 550X, P43s, E480, E580, T14 Gen 1
 - Dell XPS 9365, 9370, Latitude 7390 2-in-1
 - Microsoft Surface Book 2
 
