@@ -113,10 +113,13 @@ sudo ./throttled/install.sh
 ```
 
 ### Gentoo
-An overlay is [available](https://github.com/erpalma/throttled-overlay).
+An overlay is [available](https://github.com/erpalma/throttled-overlay). Follow the instructions in the README to add it.
 ```
-layman -o https://github.com/erpalma/throttled-overlay/raw/master/repositories.xml -f -a throttled
 sudo emerge -av sys-power/throttled
+# when using OpenRC:
+rc-update add throttled default
+/etc/init.d/throttled start
+# when using SystemD:
 systemctl enable throttled.service
 systemctl start throttled.service
 ```
