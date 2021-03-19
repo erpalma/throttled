@@ -86,15 +86,83 @@ thermal_status_bits = {
 }
 
 supported_cpus = {
-    'Haswell': (0x3C, 0x3F, 0x45, 0x46),
-    'Broadwell': (0x3D, 0x47, 0x4F, 0x56),
-    'Skylake': (0x4E, 0x55),
-    'Skylake-S': (0x5E,),
-    'Ice Lake': (0x7E,),
-    'Kaby Lake (R)': (0x8E, 0x9E),
-    'Coffee Lake': (0x9E,),
-    'Cannon Lake': (0x66,),
-    'Comet Lake': (0xA5, 0xA6),
+    (6, 26, 1): 'Nehalem',
+    (6, 26, 2): 'Nehalem-EP',
+    (6, 26, 4): 'Bloomfield',
+    (6, 28, 2): 'Silverthorne',
+    (6, 28, 10): 'PineView',
+    (6, 29, 0): 'Dunnington-6C',
+    (6, 29, 1): 'Dunnington',
+    (6, 30, 0): 'Lynnfield',
+    (6, 30, 5): 'Lynnfield_CPUID',
+    (6, 31, 1): 'Auburndale',
+    (6, 37, 2): 'Clarkdale',
+    (6, 38, 1): 'TunnelCreek',
+    (6, 39, 2): 'Medfield',
+    (6, 42, 2): 'SandyBridge',
+    (6, 42, 6): 'SandyBridge',
+    (6, 42, 7): 'Sandy Bridge-DT',
+    (6, 44, 1): 'Westmere-EP',
+    (6, 44, 2): 'Gulftown',
+    (6, 45, 5): 'Sandy Bridge-EP',
+    (6, 45, 6): 'Sandy Bridge-E',
+    (6, 46, 4): 'Beckton',
+    (6, 46, 5): 'Beckton',
+    (6, 46, 6): 'Beckton',
+    (6, 47, 2): 'Eagleton',
+    (6, 53, 1): 'Cloverview',
+    (6, 54, 1): 'Cedarview-D',
+    (6, 54, 9): 'Centerton',
+    (6, 55, 3): 'Bay Trail-D',
+    (6, 55, 8): 'Silvermont',
+    (6, 58, 9): 'Ivy Bridge-DT',
+    (6, 60, 3): 'Haswell-DT',
+    (6, 61, 4): 'Broadwell-U',
+    (6, 62, 3): 'IvyBridgeEP',
+    (6, 62, 4): 'Ivy Bridge-E',
+    (6, 63, 2): 'Haswell-EP',
+    (6, 69, 1): 'HaswellULT',
+    (6, 70, 1): 'Crystal Well-DT',
+    (6, 71, 1): 'Broadwell-H',
+    (6, 76, 3): 'Braswell',
+    (6, 77, 8): 'Avoton',
+    (6, 78, 3): 'Skylake',
+    (6, 79, 1): 'BroadwellE',
+    (6, 85, 4): 'SkylakeXeon',
+    (6, 85, 6): 'CascadeLakeSP',
+    (6, 85, 7): 'CascadeLakeXeon2',
+    (6, 86, 2): 'BroadwellDE',
+    (6, 86, 4): 'BroadwellDE',
+    (6, 87, 0): 'KnightsLanding',
+    (6, 87, 1): 'KnightsLanding',
+    (6, 90, 0): 'Moorefield',
+    (6, 92, 9): 'Apollo Lake',
+    (6, 93, 1): 'SoFIA',
+    (6, 94, 0): 'Skylake',
+    (6, 94, 3): 'Skylake-S',
+    (6, 95, 1): 'Denverton',
+    (6, 102, 3): 'Cannon Lake-U',
+    (6, 117, 10): 'Spreadtrum',
+    (6, 122, 1): 'Gemini Lake-D',
+    (6, 122, 8): 'GoldmontPlus',
+    (6, 126, 5): 'IceLakeY',
+    (6, 138, 1): 'Lakefield',
+    (6, 140, 1): 'TigerLake',
+    (6, 142, 9): 'Kabylake',
+    (6, 142, 10): 'Kabylake',
+    (6, 142, 11): 'WhiskeyLake',
+    (6, 142, 12): 'Comet Lake-U',
+    (6, 156, 0): 'JasperLake',
+    (6, 158, 9): 'KabylakeG',
+    (6, 158, 10): 'Coffeelake',
+    (6, 158, 11): 'Coffeelake',
+    (6, 158, 12): 'CoffeeLake',
+    (6, 158, 13): 'CoffeeLake',
+    (6, 165, 2): 'CometLake',
+    (6, 165, 4): 'CometLake',
+    (6, 165, 5): 'Comet Lake-S',
+    (6, 166, 0): 'CometLake',
+    (6, 167, 1): 'RocketLake',
 }
 
 
@@ -739,15 +807,21 @@ def check_cpu():
         if cpuinfo['vendor_id'] != 'GenuineIntel':
             fatal('This tool is designed for Intel CPUs only.')
 
-        cpu_model = None
-        for model in supported_cpus:
-            if cpuinfo['model'] in supported_cpus[model]:
-                cpu_model = model
-                break
-        if cpuinfo['cpu family'] != 6 or cpu_model is None:
-            fatal('Your CPU model is not supported.')
+        cpuid = (cpuinfo['cpu family'], cpuinfo['model'], cpuinfo['stepping'])
+        if cpuid not in supported_cpus:
+            fatal(
+                'Your CPU model is not supported.\n\n'
+                'Please open a new issue (https://github.com/erpalma/throttled/issues) specifying:\n'
+                ' - model name\n'
+                ' - cpu family\n'
+                ' - model\n'
+                ' - stepping\n'
+                'from /proc/cpuinfo.'
+            )
 
-        log('[I] Detected CPU architecture: Intel {:s}'.format(cpu_model))
+        log('[I] Detected CPU architecture: Intel {:s}'.format(supported_cpus[cpuid]))
+    except SystemExit:
+        sys.exit(1)
     except:
         fatal('Unable to identify CPU model.')
 
