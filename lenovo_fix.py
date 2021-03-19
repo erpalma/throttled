@@ -405,6 +405,8 @@ def get_undervolt(plane=None, convert=False):
 
 
 def undervolt(config):
+    if 'UNDERVOLT.{:s}'.format(power['source']) not in config and 'UNDERVOLT' not in config:
+        return
     for plane in VOLTAGE_PLANES:
         write_offset_mv = config.getfloat(
             'UNDERVOLT.{:s}'.format(power['source']), plane, fallback=config.getfloat('UNDERVOLT', plane, fallback=0.0)
