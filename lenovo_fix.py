@@ -12,7 +12,7 @@ import subprocess
 import sys
 from collections import defaultdict
 from datetime import datetime
-from errno import EACCES, EPERM
+from errno import EACCES, EIO, EPERM
 from multiprocessing import cpu_count
 from platform import uname
 from threading import Event, Thread
@@ -226,6 +226,8 @@ def writemsr(msr, val):
                 'Unable to write to MSR. Try to disable Secure Boot '
                 'and check if your kernel does not restrict access to MSR.'
             )
+        elif e.errno == EIO:
+            fatal('Unable to write to MSR. Unknown error.')
         else:
             raise e
 
@@ -257,6 +259,8 @@ def readmsr(msr, from_bit=0, to_bit=63, cpu=None, flatten=False):
     except (IOError, OSError) as e:
         if e.errno == EPERM or e.errno == EACCES:
             fatal('Unable to read from MSR. Try to disable Secure Boot.')
+        elif e.errno == EIO:
+            fatal('Unable to read to MSR. Unknown error.')
         else:
             raise e
 
