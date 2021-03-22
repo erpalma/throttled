@@ -624,6 +624,8 @@ def calc_reg_values(platform_info, config):
 
 
 def set_hwp(performance_mode):
+    if performance_mode is None:
+        return
     # set HWP energy performance preference
     cur_val = readmsr('IA32_HWP_REQUEST', cpu=0)
     hwp_mode = HWP_PERFORMANCE_VALUE if performance_mode else HWP_DEFAULT_VALUE
@@ -660,7 +662,7 @@ def reload_config():
     regs = calc_reg_values(get_cpu_platform_info(), config)
     undervolt(config)
     set_icc_max(config)
-    set_hwp(config.getboolean('AC', 'HWP_Mode', fallback=False))
+    set_hwp(config.getboolean('AC', 'HWP_Mode', fallback=None))
     log('[I] Reloading changes.')
     return config, regs
 
@@ -752,7 +754,7 @@ def power_thread(config, regs, exit_event):
             set_disable_bdprochot()
 
         wait_t = config.getfloat(power['source'], 'Update_Rate_s')
-        enable_hwp_mode = config.getboolean('AC', 'HWP_Mode', fallback=False)
+        enable_hwp_mode = config.getboolean('AC', 'HWP_Mode', fallback=None)
         # set HWP less frequently. Just to be safe since (e.g.) TLP might reset this value
         if (
             enable_hwp_mode
