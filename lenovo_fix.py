@@ -223,11 +223,11 @@ def writemsr(msr, val):
     except (IOError, OSError) as e:
         if e.errno == EPERM or e.errno == EACCES:
             fatal(
-                'Unable to write to MSR. Try to disable Secure Boot '
-                'and check if your kernel does not restrict access to MSR.'
+                'Unable to write to MSR {:x}. Try to disable Secure Boot '
+                'and check if your kernel does not restrict access to MSR.'.format(msr)
             )
         elif e.errno == EIO:
-            fatal('Unable to write to MSR. Unknown error.')
+            fatal('Unable to write to MSR {:x}. Unknown error.'.format(msr))
         else:
             raise e
 
@@ -258,9 +258,9 @@ def readmsr(msr, from_bit=0, to_bit=63, cpu=None, flatten=False):
         return output[cpu] if cpu is not None else output
     except (IOError, OSError) as e:
         if e.errno == EPERM or e.errno == EACCES:
-            fatal('Unable to read from MSR. Try to disable Secure Boot.')
+            fatal('Unable to read from MSR {:x}. Try to disable Secure Boot.'.format(msr))
         elif e.errno == EIO:
-            fatal('Unable to read to MSR. Unknown error.')
+            fatal('Unable to read to MSR {:x}. Unknown error.'.format(msr))
         else:
             raise e
 
