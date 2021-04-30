@@ -645,7 +645,7 @@ def set_disable_bdprochot():
 
     writemsr('MSR_POWER_CTL', new_val)
     if args.debug:
-        read_value = readmsr('MSR_POWER_CTL', from_bit=31, to_bit=31)[0]
+        read_value = readmsr('MSR_POWER_CTL', from_bit=0, to_bit=0)[0]
         match = OK if ~read_value else ERR
         log('[D] BDPROCHOT - write "{:#02x}" - read "{:#02x}" - match {}'.format(0, read_value, match))
 
@@ -750,7 +750,7 @@ def power_thread(config, regs, exit_event):
 
         # Disable BDPROCHOT
         disable_bdprochot = config.getboolean(power['source'], 'Disable_BDPROCHOT', fallback=None)
-        if disable_bdprochot is not None:
+        if disable_bdprochot:
             set_disable_bdprochot()
 
         wait_t = config.getfloat(power['source'], 'Update_Rate_s')
