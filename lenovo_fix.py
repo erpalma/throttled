@@ -223,11 +223,11 @@ def writemsr(msr, val):
     except (IOError, OSError) as e:
         if e.errno == EPERM or e.errno == EACCES:
             fatal(
-                'Unable to write to MSR {:x}. Try to disable Secure Boot '
-                'and check if your kernel does not restrict access to MSR.'.format(msr)
+                'Unable to write to MSR {} ({:x}). Try to disable Secure Boot '
+                'and check if your kernel does not restrict access to MSR.'.format(msr, MSR_DICT[msr])
             )
         elif e.errno == EIO:
-            fatal('Unable to write to MSR {:x}. Unknown error.'.format(msr))
+            fatal('Unable to write to MSR {} ({:x}). Unknown error.'.format(msr, MSR_DICT[msr]))
         else:
             raise e
 
@@ -253,14 +253,14 @@ def readmsr(msr, from_bit=0, to_bit=63, cpu=None, flatten=False):
             output.append(get_value_for_bits(val, from_bit, to_bit))
         if flatten:
             if len(set(output)) > 1:
-                warning('Found multiple values for {:s} (0x{:x}). This should never happen.')
+                warning('Found multiple values for {:s} ({:x}). This should never happen.'.format(msr, MSR_DICT[msr]))
             return output[0]
         return output[cpu] if cpu is not None else output
     except (IOError, OSError) as e:
         if e.errno == EPERM or e.errno == EACCES:
-            fatal('Unable to read from MSR {:x}. Try to disable Secure Boot.'.format(msr))
+            fatal('Unable to read from MSR {} ({:x}). Try to disable Secure Boot.'.format(msr, MSR_DICT[msr]))
         elif e.errno == EIO:
-            fatal('Unable to read to MSR {:x}. Unknown error.'.format(msr))
+            fatal('Unable to read to MSR {} ({:x}). Unknown error.'.format(msr, MSR_DICT[msr]))
         else:
             raise e
 
