@@ -930,7 +930,7 @@ def main():
 
     undervolt(config)
     set_icc_max(config)
-    set_hwp(config.getboolean('AC', 'HWP_Mode', fallback=False))
+    set_hwp(config.getboolean('AC', 'HWP_Mode', fallback=None))
 
     exit_event = Event()
     thread = Thread(target=power_thread, args=(config, regs, exit_event))
