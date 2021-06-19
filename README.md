@@ -74,6 +74,7 @@ sudo rc-service lenovo_fix start
 ```
 sudo apt install git build-essential python3-dev libdbus-glib-1-dev libgirepository1.0-dev libcairo2-dev python3-venv python3-wheel
 git clone https://github.com/erpalma/throttled.git
+sudo apt update; sudo apt install build-essential gobject-introspection libgirepository1.0-dev libdbus-glib-1-dev libcairo2-dev libjpeg-dev libgif-dev -y
 sudo ./throttled/install.sh
 ```
 If you own a X1C6 you can also check a tutorial for Ubuntu 18.04 [here](https://mensfeld.pl/2018/05/lenovo-thinkpad-x1-carbon-6th-gen-2018-ubuntu-18-04-tweaks/).
