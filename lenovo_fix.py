@@ -937,7 +937,7 @@ def main():
     thread.daemon = True
     thread.start()
 
-    # handle dbus events for applying undervolt/IccMax on resume from sleep/hybernate
+    # handle dbus events for applying undervolt/IccMax on resume from sleep/hibernate
     def handle_sleep_callback(sleeping):
         if not sleeping:
             undervolt(config)
