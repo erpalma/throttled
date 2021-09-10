@@ -19,7 +19,7 @@ I will keep this list updated.
 I suggest you to use the excellent **[s-tui](https://github.com/amanusk/s-tui)** tool to check and monitor the CPU usage, frequency, power and temperature under load!
 
 ### Undervolt
-The tool supports **undervolting** the CPU by configuring voltage offsets for CPU, cache, GPU, System Agent and Analog I/O planes. The tool will re-apply undervolt on resume from standby and hibernate by listening to DBus signals. You can now either use the `UNDERVOLT` key in config to set global values or the `UNDERVOLT.AC` and `UNDERVOLT.BATTERY` keys to selectively set undervolt values for the two power profiles.
+The tool supports **undervolting** the CPU by configuring voltage offsets for CPU, cache, GPU, iGPU Unslice and Analog I/O planes. The tool will re-apply undervolt on resume from standby and hibernate by listening to DBus signals. You can now either use the `UNDERVOLT` key in config to set global values or the `UNDERVOLT.AC` and `UNDERVOLT.BATTERY` keys to selectively set undervolt values for the two power profiles.
 
 ### IccMax (EXPERTS ONLY)
 The tool now supports overriding the **IccMax** by configuring the maximum allowed current for CPU, cache and GPU planes. The tool will re-apply IccMax on resume from standby and hibernate. You can now either use the `ICCMAX` key in config to set global values or the `ICCMAX.AC` and `ICCMAX.BATTERY` keys to selectively set current values for the two power profiles. **NOTE:** the values specified in the config file are the actual current limit of your system, so those are not a offset from the default values as for the undervolt. As such, you should first find your system default values with the `--monitor` command.
@@ -195,8 +195,8 @@ CORE: -105
 GPU: -85
 # CPU cache voltage offset (mV)
 CACHE: -105
-# System Agent voltage offset (mV)
-UNCORE: -85
+# iGPU Unslice voltage offset (mV)
+iGPU UNSLICE: -85
 # Analog I/O voltage offset (mV)
 ANALOGIO: 0
 ```
@@ -209,7 +209,7 @@ With the flag `--monitor` the tool *constantly* monitors the throttling status, 
 [I] Detected CPU architecture: Intel Kaby Lake (R)
 [I] Loading config file.
 [I] Starting main loop.
-[D] Undervolt offsets: CORE: -105.00 mV | GPU: -85.00 mV | CACHE: -105.00 mV | UNCORE: -85.00 mV | ANALOGIO: 0.00 mV
+[D] Undervolt offsets: CORE: -105.00 mV | GPU: -85.00 mV | CACHE: -105.00 mV | iGPU UNSLICE: -85.00 mV | ANALOGIO: 0.00 mV
 [D] IccMax: CORE: 64.00 A | GPU: 31.00 A | CACHE: 6.00 A
 [D] Realtime monitoring of throttling causes:
 
@@ -275,7 +275,7 @@ This is an example output:
 [D] Undervolt plane CORE - write 0xf2800000 - read 0xf2800000
 [D] Undervolt plane GPU - write 0xf5200000 - read 0xf5200000
 [D] Undervolt plane CACHE - write 0xf2800000 - read 0xf2800000
-[D] Undervolt plane UNCORE - write 0xf5200000 - read 0xf5200000
+[D] Undervolt plane iGPU UNSLICE - write 0xf5200000 - read 0xf5200000
 [D] Undervolt plane ANALOGIO - write 0x0 - read 0x0
 [D] MSR PACKAGE_POWER_LIMIT - write 0xcc816000dc80e8 - read 0xcc816000dc80e8
 [D] MCHBAR PACKAGE_POWER_LIMIT - write 0xcc816000dc80e8 - read 0xcc816000dc80e8
