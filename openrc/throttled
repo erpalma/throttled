@@ -1,0 +1,5 @@
+#!/usr/bin/openrc-run
+command="env python3 /usr/lib/throttled/throttled.py"
+pidfile=${pidfile-/var/run/throttled.pid}
+description="Stop Intel throttling"
+command_background="yes"

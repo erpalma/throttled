@@ -165,6 +165,9 @@ supported_cpus = {
     (6, 167, 1): 'RocketLake',
 }
 
+TESTMSR = False
+UNSUPPORTED_FEATURES = []
+
 
 class bcolors:
     YELLOW = '\033[93m'
@@ -221,6 +224,8 @@ def writemsr(msr, val):
             os.write(f, struct.pack('Q', val))
             os.close(f)
     except (IOError, OSError) as e:
+        if TESTMSR:
+            raise e
         if e.errno == EPERM or e.errno == EACCES:
             fatal(
                 'Unable to write to MSR {} ({:x}). Try to disable Secure Boot '
@@ -257,6 +262,8 @@ def readmsr(msr, from_bit=0, to_bit=63, cpu=None, flatten=False):
             return output[0]
         return output[cpu] if cpu is not None else output
     except (IOError, OSError) as e:
+        if TESTMSR:
+            raise e
         if e.errno == EPERM or e.errno == EACCES:
             fatal('Unable to read from MSR {} ({:x}). Try to disable Secure Boot.'.format(msr, MSR_DICT[msr]))
         elif e.errno == EIO:
@@ -394,6 +401,8 @@ def calc_undervolt_mv(msr_value):
 
 
 def get_undervolt(plane=None, convert=False):
+    if 'UNDERVOLT' in UNSUPPORTED_FEATURES:
+        return 0
     planes = [plane] if plane in VOLTAGE_PLANES else VOLTAGE_PLANES
     out = {}
     for plane in planes:
@@ -405,7 +414,9 @@ def get_undervolt(plane=None, convert=False):
 
 
 def undervolt(config):
-    if 'UNDERVOLT.{:s}'.format(power['source']) not in config and 'UNDERVOLT' not in config:
+    if ('UNDERVOLT.{:s}'.format(power['source']) not in config and 'UNDERVOLT' not in config) or (
+        'UNDERVOLT' in UNSUPPORTED_FEATURES
+    ):
         return
     for plane in VOLTAGE_PLANES:
         write_offset_mv = config.getfloat(
@@ -624,11 +635,11 @@ def calc_reg_values(platform_info, config):
 
 
 def set_hwp(performance_mode):
-    if performance_mode is None:
+    if performance_mode not in (True, False) or 'HWP' in UNSUPPORTED_FEATURES:
         return
     # set HWP energy performance preference
     cur_val = readmsr('IA32_HWP_REQUEST', cpu=0)
-    hwp_mode = HWP_PERFORMANCE_VALUE if performance_mode else HWP_DEFAULT_VALUE
+    hwp_mode = HWP_PERFORMANCE_VALUE if performance_mode is True else HWP_DEFAULT_VALUE
     new_val = (cur_val & 0xFFFFFFFF00FFFFFF) | (hwp_mode << 24)
 
     writemsr('IA32_HWP_REQUEST', new_val)
@@ -699,7 +710,7 @@ def power_thread(config, regs, exit_event):
             power['source'] = 'BATTERY' if is_on_battery(config) else 'AC'
 
         # set temperature trip point
-        if 'MSR_TEMPERATURE_TARGET' in regs[power['source']]:
+        if 's' in regs[power['source']]:
             write_value = regs[power['source']]['MSR_TEMPERATURE_TARGET']
             writemsr('MSR_TEMPERATURE_TARGET', write_value)
             if args.debug:
@@ -834,6 +845,27 @@ def check_cpu():
         fatal('Unable to identify CPU model.')
 
 
+def test_msr_rw_capabilities():
+    TESTMSR = True
+
+    try:
+        log('[I] Testing if undervolt is supported...')
+        get_undervolt()
+    except:
+        warning('Undervolt seems not to be supported by your system, disabling.')
+        UNSUPPORTED_FEATURES.append('UNDERVOLT')
+
+    try:
+        log('[I] Testing if HWP is supported...')
+        cur_val = readmsr('IA32_HWP_REQUEST', cpu=0)
+        writemsr('IA32_HWP_REQUEST', cur_val)
+    except:
+        warning('HWP seems not to be supported by your system, disabling.')
+        UNSUPPORTED_FEATURES.append('HWP')
+
+    TESTMSR = False
+
+
 def monitor(exit_event, wait):
     wait = max(0.1, wait)
     rapl_power_unit = 0.5 ** readmsr('MSR_RAPL_POWER_UNIT', from_bit=8, to_bit=12, cpu=0)
@@ -896,7 +928,7 @@ def main():
         nargs='?',
         help='realtime monitoring of throttling causes (default 1s)',
     )
-    parser.add_argument('--config', default='/etc/lenovo_fix.conf', help='override default config file path')
+    parser.add_argument('--config', default='/etc/throttled.conf', help='override default config file path')
     parser.add_argument('--force', action='store_true', help='bypass compatibility checks (EXPERTS only)')
     parser.add_argument('--log', metavar='/path/to/file', help='log to file instead of stdout')
     args = parser.parse_args()
@@ -913,6 +945,8 @@ def main():
         check_cpu()
 
     set_msr_allow_writes()
+
+    test_msr_rw_capabilities()
 
     log('[I] Loading config file.')
     config = load_config()
