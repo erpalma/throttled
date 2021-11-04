@@ -710,7 +710,7 @@ def power_thread(config, regs, exit_event):
             power['source'] = 'BATTERY' if is_on_battery(config) else 'AC'
 
         # set temperature trip point
-        if 's' in regs[power['source']]:
+        if 'MSR_TEMPERATURE_TARGET' in regs[power['source']]:
             write_value = regs[power['source']]['MSR_TEMPERATURE_TARGET']
             writemsr('MSR_TEMPERATURE_TARGET', write_value)
             if args.debug:
