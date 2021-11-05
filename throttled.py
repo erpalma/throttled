@@ -148,6 +148,7 @@ supported_cpus = {
     (6, 126, 5): 'IceLakeY',
     (6, 138, 1): 'Lakefield',
     (6, 140, 1): 'TigerLake',
+    (6, 141, 1): 'TigerLake',
     (6, 142, 9): 'Kabylake',
     (6, 142, 10): 'Kabylake',
     (6, 142, 11): 'WhiskeyLake',
