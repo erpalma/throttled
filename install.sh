@@ -23,7 +23,7 @@ cd "$(dirname "$0")"
 
 if [ -f /etc/lenovo_fix.conf ]; then
     echo "Updating config filename"
-    mv etc/lenovo_fix.conf /etc/throttled.conf
+    mv /etc/lenovo_fix.conf /etc/throttled.conf
 fi
 echo "Copying config file"
 if [ ! -f /etc/throttled.conf ]; then
