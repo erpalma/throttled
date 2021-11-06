@@ -15,7 +15,7 @@ elif pidof openrc 2>&1 1>/dev/null; then
 fi
 
 mv "$LEGACY_INSTALL_DIR" "$INSTALL_DIR" >/dev/null 2>&1
-rm "$INSTALL_DIR/lenovo_fix.py" >/dev/null 2>&1
+rm -f "$INSTALL_DIR/lenovo_fix.py" >/dev/null 2>&1
 mkdir -p "$INSTALL_DIR" >/dev/null 2>&1
 set -e
 
