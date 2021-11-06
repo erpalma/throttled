@@ -35,7 +35,7 @@ fi
 if pidof systemd 2>&1 1>/dev/null; then
     echo "Copying systemd service file"
     cp systemd/throttled.service /etc/systemd/system
-    rm /etc/systemd/system/lenovo_fix.service >/dev/null 2>&1
+    rm -f /etc/systemd/system/lenovo_fix.service >/dev/null 2>&1
 elif pidof runit 2>&1 1>/dev/null; then
     echo "Copying runit service file"
     cp -R runit/throttled /etc/sv/
@@ -43,7 +43,7 @@ elif pidof runit 2>&1 1>/dev/null; then
 elif pidof openrc-init 2>&1 1>/dev/null; then
     echo "Copying OpenRC service file"
     cp -R openrc/throttled /etc/init.d/throttled
-    rm /etc/init.d/lenovo_fix >/dev/null 2>&1
+    rm -f /etc/init.d/lenovo_fix >/dev/null 2>&1
     chmod 755 /etc/init.d/throttled
 fi
 
