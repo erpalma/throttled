@@ -91,6 +91,11 @@ If you want to keep it disabled even after a package update you should also run:
 sudo systemctl mask thermald.service
 ```
 
+In order to check if the service is well started, you could run:
+```
+systemctl status throttled
+```
+
 ### Fedora
 A [copr repository](https://copr.fedorainfracloud.org/coprs/abn/throttled/) is available and can be used as detailed below. You can find the configuration installed at `/etc/throttled.conf`. The issue tracker for this packaging is available [here](https://github.com/abn/throttled-rpm/issues).
 ```
