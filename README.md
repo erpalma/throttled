@@ -28,7 +28,7 @@ The tool supports **undervolting** the CPU by configuring voltage offsets for CP
 The tool now supports overriding the **IccMax** by configuring the maximum allowed current for CPU, cache and GPU planes. The tool will re-apply IccMax on resume from standby and hibernate. You can now either use the `ICCMAX` key in config to set global values or the `ICCMAX.AC` and `ICCMAX.BATTERY` keys to selectively set current values for the two power profiles. **NOTE:** the values specified in the config file are the actual current limit of your system, so those are not a offset from the default values as for the undervolt. As such, you should first find your system default values with the `--monitor` command.
 
 ### HWP override (EXPERIMENTAL)
-I have found that under load my CPU was not always hitting max turbo frequency, in particular when using one/two cores only. For instance, when running [prime95](https://www.mersenne.org/download/) (1 core, test #1) my CPU is limited to about 3500 MHz over the theoretical 4000 MHz maximum. The reason is the value for the HWP energy performance [hints](http://manpages.ubuntu.com/manpages/artful/man8/x86_energy_perf_policy.8.html). By default TLP sets this value to `balance_performance` on AC in order to reduce the power consumption/heat in idle. By setting this value to `performance` I was able to reach 3900 MHz in the prime95 single core test, achieving a +400 MHz boost. Since this value forces the CPU to full speed even during idle, a new experimental feature allows to automatically set HWP to performance under load and revert it to balanced when idle. This feature can be enabled (in AC mode *only*) by setting to `True` the `HWP_Mode` parameter in the lenovo_fix config file : https://github.com/erpalma/throttled/blob/master/etc/lenovo_fix.conf#L41 .
+I have found that under load my CPU was not always hitting max turbo frequency, in particular when using one/two cores only. For instance, when running [prime95](https://www.mersenne.org/download/) (1 core, test #1) my CPU is limited to about 3500 MHz over the theoretical 4000 MHz maximum. The reason is the value for the HWP energy performance [hints](http://manpages.ubuntu.com/manpages/artful/man8/x86_energy_perf_policy.8.html). By default TLP sets this value to `balance_performance` on AC in order to reduce the power consumption/heat in idle. By setting this value to `performance` I was able to reach 3900 MHz in the prime95 single core test, achieving a +400 MHz boost. Since this value forces the CPU to full speed even during idle, a new experimental feature allows to automatically set HWP to performance under load and revert it to balanced when idle. This feature can be enabled (in AC mode *only*) by setting to `True` the `HWP_Mode` parameter in the throttled config file : https://github.com/erpalma/throttled/blob/master/etc/throttled.conf#L41 .
 
 I have run **[Geekbench 4](https://browser.geekbench.com/v4/cpu/8656840)** and now I can get a score of 5391/17265! On `balance_performance` I can reach only 4672/16129, so **15% improvement** in single core and 7% in multicore, not bad ;)
 
@@ -55,22 +55,22 @@ Note that some kernels (e.g. [linux-hardened](https://www.archlinux.org/packages
 As discovered by *DEvil0000* the Linux Thermal Monitor ([thermald](https://github.com/intel/thermal_daemon)) can conflict with the purpose of this tool. In particular, thermald might be pre-installed (e.g. on Ubuntu) and configured in such a way to keep the CPU temperature below a certain threshold (~80 'C) by applying throtthling or messing up with RAPL or other CPU-specific registers. I strongly suggest to either disable/uninstall it or to review its default configuration.
 
 ### Update
-The tool is now running with Python3 by default (tested w/ 3.6) and a virtualenv is automatically created in `/opt/lenovo_fix`. Python2 should probably still work.
+The tool is now running with Python3 by default (tested w/ 3.6) and a virtualenv is automatically created in `/opt/throttled`. Python2 should probably still work.
 
 ## Installation
 
 ### Arch Linux [community package](https://www.archlinux.org/packages/community/x86_64/throttled/):
 ```
 pacman -S throttled
-sudo systemctl enable --now lenovo_fix.service
+sudo systemctl enable --now throttled.service
 ```
 Thanks to *felixonmars* for creating and maintaining this package.
 
 ### Artix Linux
 ```
 makepkg -si
-sudo rc-update add lenovo_fix default
-sudo rc-service lenovo_fix start
+sudo rc-update add throttled default
+sudo rc-service throttled start
 ```
 
 ### Debian/Ubuntu
@@ -138,7 +138,7 @@ sudo ./throttled/install.sh
 
 ### Void
 
-The installation itself will create a runit service as lenovo_fix, enable it and start it. Before installation, make sure dbus is running `sv up dbus`.
+The installation itself will create a runit service as throttled, enable it and start it. Before installation, make sure dbus is running `sv up dbus`.
 
 ```
 sudo xbps-install -Sy gcc git python3-devel dbus-glib-devel libgirepository-devel cairo-devel python3-wheel pkg-config make
@@ -151,27 +151,27 @@ sudo ./throttled/install.sh
 ### Uninstall
 To permanently stop and disable the execution just issue:
 ```
-systemctl stop lenovo_fix.service
-systemctl disable lenovo_fix.service
+systemctl stop throttled.service
+systemctl disable throttled.service
 ```
 
 If you're running runit instead of systemd:
 ```
-sv down lenovo_fix
-rm /var/service/lenovo_fix
+sv down throttled
+rm /var/service/throttled
 ```
 
 If you're using OpenRC instead of systemd:
 ```
-rc-service lenovo_fix stop
-rc-update del lenovo_fix default
+rc-service throttled stop
+rc-update del throttled default
 ```
 
 If you also need to remove the tool from the system:
 ```
-rm -rf /opt/lenovo_fix /etc/systemd/system/lenovo_fix.service
+rm -rf /opt/throttled /etc/systemd/system/throttled.service
 # to purge also the config file
-rm /etc/lenovo_fix.conf
+rm /etc/throttled.conf
 ```
 On Arch you should probably use `pacman -R lenovo-throttling-fix-git` instead.
 
@@ -181,12 +181,12 @@ If you update the tool you should manually check your config file for changes or
 cd throttled
 git pull
 sudo ./install.sh
-sudo systemctl restart lenovo_fix.service
-OpenRC: sudo rc-service lenovo_fix restart
+sudo systemctl restart throttled.service
+OpenRC: sudo rc-service throttled restart
 ```
 
 ## Configuration
-The configuration has moved to `/etc/lenovo_fix.conf`. Makefile does not overwrite your previous config file, so you need to manually check for differences in config file structure when updating the tool. If you want to overwrite the config with new defaults just issue `sudo cp etc/lenovo_fix.conf /etc`. There exist two profiles `AC` and `BATTERY` and the tool can be totally disabled by setting `Enabled: False` in the `GENERAL` section. Undervolt is applied if any voltage plane in the config file (section UNDERVOLT) was set. Notice that the offset is in *mV* and only undervolting (*i.e.* negative values) is supported.
+The configuration has moved to `/etc/throttled.conf`. Makefile does not overwrite your previous config file, so you need to manually check for differences in config file structure when updating the tool. If you want to overwrite the config with new defaults just issue `sudo cp etc/throttled.conf /etc`. There exist two profiles `AC` and `BATTERY` and the tool can be totally disabled by setting `Enabled: False` in the `GENERAL` section. Undervolt is applied if any voltage plane in the config file (section UNDERVOLT) was set. Notice that the offset is in *mV* and only undervolting (*i.e.* negative values) is supported.
 All fields accept floating point values as well as integers.
 
 My T480s with i7-8550u is stable with:
@@ -208,7 +208,7 @@ ANALOGIO: 0
 ## Monitoring
 With the flag `--monitor` the tool *constantly* monitors the throttling status, indicating the cause among thermal limit, power limit, current limit or cross-origin. The last cause is often related to an external event (e.g. by the GPU). The update rate can be adjusted and defaults to 1 second. Example output:
 ```
-./lenovo_fix.py --monitor
+./throttled.py --monitor
 [I] Detected CPU architecture: Intel Kaby Lake (R)
 [I] Loading config file.
 [I] Starting main loop.
@@ -264,7 +264,7 @@ w /sys/devices/virtual/powercap/intel-rapl-mmio/intel-rapl-mmio:0/constraint_1_t
 You can enable the `--debug` option to read back written values and check if the tool is working properly. At the statup it will also show the CPUs platform info which contains information about multiplier values and features present for this CPU. Additionally the tool will print the thermal status per core which is handy when it comes to figuring out the reason for CPU throttle. Status fields stands for the current throttle reason or condition and log shows if this was a throttle reason since the last interval.
 This is an example output:
 ```
-./lenovo_fix.py --debug
+./throttled.py --debug
 [D] cpu platform info: maximum non turbo ratio = 20
 [D] cpu platform info: maximum efficiency ratio = 4
 [D] cpu platform info: minimum operating ratio = 4
