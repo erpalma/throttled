@@ -5,13 +5,13 @@ INSTALL_DIR="/opt/throttled"
 
 INIT="$(ps --no-headers -o comm 1)"
 
-if [ "$INIT" == "systemd" ]; then
+if [ "$INIT" = "systemd" ]; then
     systemctl stop lenovo_fix.service >/dev/null 2>&1
     systemctl stop throttled.service >/dev/null 2>&1
-elif [ "$INIT" == "runit" ]; then
+elif [ "$INIT" = "runit" ]; then
     sv down lenovo_fix >/dev/null 2>&1
     sv down throttled >/dev/null 2>&1
-elif [ "$INIT" == "init" ]; then
+elif [ "$INIT" = "init" ]; then
     rc-service lenovo_fix stop >/dev/null 2>&1
     rc-service throttled stop >/dev/null 2>&1
 fi
@@ -34,15 +34,15 @@ else
 	echo "Config file already exists, skipping"
 fi
 
-if [ "$INIT" == "systemd" ]; then
+if [ "$INIT" = "systemd" ]; then
     echo "Copying systemd service file"
     cp systemd/throttled.service /etc/systemd/system
     rm -f /etc/systemd/system/lenovo_fix.service >/dev/null 2>&1
-elif [ "$INIT" == "runit" ]; then
+elif [ "$INIT" = "runit" ]; then
     echo "Copying runit service file"
     cp -R runit/throttled /etc/sv/
     rm -r /etc/sv/lenovo_fix >/dev/null 2>&1
-elif [ "$INIT" == "init" ]; then
+elif [ "$INIT" = "init" ]; then
     echo "Copying OpenRC service file"
     cp -R openrc/throttled /etc/init.d/throttled
     rm -f /etc/init.d/lenovo_fix >/dev/null 2>&1
@@ -58,16 +58,16 @@ cd "$INSTALL_DIR"
 pip install wheel
 pip install -r requirements.txt
 
-if [ "$INIT" == "systemd" ]; then
+if [ "$INIT" = "systemd" ]; then
     echo "Enabling and starting systemd service"
     systemctl daemon-reload
     systemctl enable throttled.service
     systemctl restart throttled.service
-elif [ "$INIT" == "runit" ]; then
+elif [ "$INIT" = "runit" ]; then
     echo "Enabling and starting runit service"
     ln -sv /etc/sv/throttled /var/service/
     sv up throttled
-elif [ "$INIT" == "init" ]; then
+elif [ "$INIT" = "init" ]; then
     echo "Enabling and starting OpenRC service"
     rc-update add throttled default
     rc-service throttled start
