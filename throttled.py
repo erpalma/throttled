@@ -898,6 +898,7 @@ def monitor(exit_event, wait):
         # ugly code, just testing...
         vcore = readmsr('IA32_PERF_STATUS', from_bit=32, to_bit=47, cpu=0) / (2.0 ** 13) * 1000
         stats2 = {'VCore': '{:.0f} mV'.format(vcore)}
+        total = 0.0
         for power_plane in ('Package', 'Graphics', 'DRAM'):
             energy_j = readmsr(power_plane_msr[power_plane], cpu=0) * rapl_power_unit
             now = time()
@@ -906,6 +907,10 @@ def monitor(exit_event, wait):
                 (energy_j - prev_energy[power_plane][0]) / (now - prev_energy[power_plane][1]),
             )
             stats2[power_plane] = '{:.1f} W'.format(energy_w)
+            total += energy_w
+
+        stats2['Total'] = '{:.1f} W'.format(total)
+
         output2 = ('{:s}: {:s}'.format(label, stats2[label]) for label in stats2)
         terminator = '\n' if args.log else '\r'
         log(
