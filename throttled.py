@@ -316,7 +316,7 @@ def is_on_battery(config):
         res = re.search(rb'state:\s+(.+)', out).group(1).decode().strip()
         if res == 'discharging':
             return True
-        elif res in ('fully-charged', 'charging'):
+        elif res in ('fully-charged', 'charging', 'pending-charge'):
             return False
     except:
         pass
