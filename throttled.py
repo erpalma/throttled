@@ -153,6 +153,7 @@ supported_cpus = {
     (6, 142, 10): 'Kabylake',
     (6, 142, 11): 'WhiskeyLake',
     (6, 142, 12): 'Comet Lake-U',
+    (6, 154, 3): 'AlderLake',
     (6, 156, 0): 'JasperLake',
     (6, 158, 9): 'KabylakeG',
     (6, 158, 10): 'Coffeelake',
