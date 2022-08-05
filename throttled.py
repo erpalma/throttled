@@ -15,6 +15,7 @@ from datetime import datetime
 from errno import EACCES, EIO, EPERM
 from multiprocessing import cpu_count
 from platform import uname
+from subprocess import check_output, CalledProcessError
 from threading import Event, Thread
 from time import time
 
@@ -153,6 +154,8 @@ supported_cpus = {
     (6, 142, 10): 'Kabylake',
     (6, 142, 11): 'WhiskeyLake',
     (6, 142, 12): 'Comet Lake-U',
+    (6, 151, 2): 'AlderLake-S',
+    (6, 154, 3): 'AlderLake-P/H',
     (6, 156, 0): 'JasperLake',
     (6, 158, 9): 'KabylakeG',
     (6, 158, 10): 'Coffeelake',
@@ -679,9 +682,18 @@ def reload_config():
     return config, regs
 
 
-def power_thread(config, regs, exit_event):
+def power_thread(config, regs, exit_event, cpuid):
     try:
-        mchbar_mmio = MMIO(0xFED159A0, 8)
+        MCHBAR_BASE = int(check_output(('setpci', '-s', '0:0.0', '48.l')), 16)
+    except CalledProcessError:
+        warning('Please ensure that "setpci" is in path. This is typically provided by the "pciutils" package.')
+        warning('Trying to guess the MCHBAR address from the CPUID. This MIGHT NOT WORK!')
+        if cpuid in ((6, 151, 2), (6, 154, 3)):
+            MCHBAR_BASE = 0xFEDC0001
+        else:
+            MCHBAR_BASE = 0xFED10001
+    try:
+        mchbar_mmio = MMIO(MCHBAR_BASE + 0x599F, 8)
     except MMIOError:
         warning('Unable to open /dev/mem. TDP override might not work correctly.')
         warning('Try to disable Secure Boot and/or enable CONFIG_DEVMEM in kernel config.')
@@ -840,6 +852,7 @@ def check_cpu():
             )
 
         log('[I] Detected CPU architecture: Intel {:s}'.format(supported_cpus[cpuid]))
+        return cpuid
     except SystemExit:
         sys.exit(1)
     except:
@@ -948,7 +961,7 @@ def main():
 
     if not args.force:
         check_kernel()
-        check_cpu()
+        cpuid = check_cpu()
 
     set_msr_allow_writes()
 
@@ -973,7 +986,7 @@ def main():
     set_hwp(config.getboolean('AC', 'HWP_Mode', fallback=None))
 
     exit_event = Event()
-    thread = Thread(target=power_thread, args=(config, regs, exit_event))
+    thread = Thread(target=power_thread, args=(config, regs, exit_event, cpuid))
     thread.daemon = True
     thread.start()
 
