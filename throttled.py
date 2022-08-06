@@ -148,7 +148,8 @@ supported_cpus = {
     (6, 122, 8): 'GoldmontPlus',
     (6, 126, 5): 'IceLakeY',
     (6, 138, 1): 'Lakefield',
-    (6, 140, 1): 'TigerLake',
+    (6, 140, 1): 'TigerLake-U',
+    (6, 140, 2): 'TigerLake-U',
     (6, 141, 1): 'TigerLake',
     (6, 142, 9): 'Kabylake',
     (6, 142, 10): 'Kabylake',
@@ -690,7 +691,7 @@ def power_thread(config, regs, exit_event, cpuid):
     except CalledProcessError:
         warning('Please ensure that "setpci" is in path. This is typically provided by the "pciutils" package.')
         warning('Trying to guess the MCHBAR address from the CPUID. This MIGHT NOT WORK!')
-        if cpuid in ((6, 140, 1),(6, 141, 1),(6, 151, 2),(6, 151, 5), (6, 154, 3),(6, 154, 4)):
+        if cpuid in ((6, 140, 1),(6, 140, 2),(6, 141, 1),(6, 151, 2),(6, 151, 5), (6, 154, 3),(6, 154, 4)):
             MCHBAR_BASE = 0xFEDC0001
         else:
             MCHBAR_BASE = 0xFED10001
