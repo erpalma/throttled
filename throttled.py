@@ -690,7 +690,7 @@ def power_thread(config, regs, exit_event, cpuid):
     except CalledProcessError:
         warning('Please ensure that "setpci" is in path. This is typically provided by the "pciutils" package.')
         warning('Trying to guess the MCHBAR address from the CPUID. This MIGHT NOT WORK!')
-        if cpuid in ((6, 151, 2), (6, 154, 3)):
+        if cpuid in ((6, 140, 1),(6, 141, 1),(6, 151, 2),(6, 151, 5), (6, 154, 3),(6, 154, 4)):
             MCHBAR_BASE = 0xFEDC0001
         else:
             MCHBAR_BASE = 0xFED10001
