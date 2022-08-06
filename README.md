@@ -11,7 +11,7 @@ The latest commit (30 Oct 2021) switched from the legacy name `lenovo_fix` for t
 ### Tested hardware
 Other users have confirmed that the tool is also working for these laptops:
 - Lenovo T470s, T480, T480s, X1C5, X1C6, X1C8, T580, L590, L490, L480, T470, X280, ThinkPad Anniversary Edition 25, E590 w/ RX 550X, P43s, E480, E580, T14 Gen 1, P14s Gen 1, T15 Gen 1, P15s Gen 1, E14 Gen 2
-- Dell XPS 9365, 9370, 9550, 7390 2-in-1, Latitude 7390 2-in-1
+- Dell XPS 9365, 9370, 9550, 7390 2-in-1, Latitude 7390 2-in-1, Inspiron 16 Plus 7620
 - Microsoft Surface Book 2
 - HP Probook 470 G5, Probook 450 G5, ZBook Firefly 15 G7
 
