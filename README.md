@@ -115,6 +115,21 @@ sudo ./throttled/install.sh
 ```
 Feedback about Fedora installation is welcome.
 
+### Fedora Silverblue
+
+
+Download the `.repo` file matching your Fedora on the [copr repository page](https://copr.fedorainfracloud.org/coprs/abn/throttled/) then copy it to `/etc/yum.repos.d/`.
+
+You can then install the package:
+
+```console
+rpm-ostree override remove thermald
+rpm-ostree install throttled
+systemctl reboot
+
+sudo systemctl enable --now throttled
+```
+
 ### openSUSE
 User *brycecordill* reported that the following dependencies are required for installing in openSUSE, tested on openSUSE 15.0 Leap.
 ```
