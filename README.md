@@ -139,7 +139,7 @@ sudo ./throttled/install.sh
 ```
 
 ### Gentoo
-An overlay is [available](https://github.com/erpalma/throttled-overlay). Follow the instructions in the README to add it.
+The ebuild is now in the official tree!
 ```
 sudo emerge -av sys-power/throttled
 # when using OpenRC:
