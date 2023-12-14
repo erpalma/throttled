@@ -145,9 +145,8 @@ sudo emerge -av sys-power/throttled
 # when using OpenRC:
 rc-update add throttled default
 /etc/init.d/throttled start
-# when using SystemD:
-systemctl enable throttled.service
-systemctl start throttled.service
+# when using systemd:
+systemctl enable --now throttled.service
 ```
 
 ### Solus
