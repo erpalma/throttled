@@ -170,6 +170,7 @@ supported_cpus = {
     (6, 165, 5): 'Comet Lake-S',
     (6, 166, 0): 'CometLake',
     (6, 167, 1): 'RocketLake',
+    (6, 186, 3): 'RaptorLake-U',
 }
 
 TESTMSR = False
