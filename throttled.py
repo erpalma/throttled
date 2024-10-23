@@ -310,24 +310,12 @@ def is_on_battery(config):
                 return not bool(int(f.read()))
         raise
     except:
-        warning('No valid Sysfs_Power_Path found! Trying upower method #1')
+        warning('No valid Sysfs_Power_Path found! Trying upower method')
     try:
-        out = subprocess.check_output(('upower', '-i', '/org/freedesktop/UPower/devices/line_power_AC'))
-        res = re.search(rb'online:\s+(yes|no)', out).group(1).decode().strip()
-        if res == 'yes':
-            return False
-        elif res == 'no':
-            return True
-        raise
-    except:
-        warning('Trying upower method #2')
-    try:
-        out = subprocess.check_output(('upower', '-i', '/org/freedesktop/UPower/devices/battery_BAT0'))
-        res = re.search(rb'state:\s+(.+)', out).group(1).decode().strip()
-        if res == 'discharging':
-            return True
-        elif res in ('fully-charged', 'charging', 'pending-charge'):
-            return False
+        bus = dbus.SystemBus()
+        proxy = bus.get_object('org.freedesktop.UPower', '/org/freedesktop/UPower')
+        iface = dbus.Interface(proxy, 'org.freedesktop.DBus.Properties')
+        return iface.Get('org.freedesktop.UPower', 'OnBattery')
     except:
         pass
 
@@ -974,6 +962,9 @@ def main():
 
     test_msr_rw_capabilities()
 
+    DBusGMainLoop(set_as_default=True)
+    bus = dbus.SystemBus()
+
     log('[I] Loading config file.')
     config = load_config()
     power['source'] = 'BATTERY' if is_on_battery(config) else 'AC'
@@ -1003,15 +994,10 @@ def main():
             undervolt(config)
             set_icc_max(config)
 
-    def handle_ac_callback(*args):
-        try:
-            power['source'] = 'BATTERY' if args[1]['Online'] == 0 else 'AC'
+    def handle_ac_callback(if_name, changed, invalidated):
+        if "OnBattery" in changed:
             power['method'] = 'dbus'
-        except:
-            power['method'] = 'polling'
-
-    DBusGMainLoop(set_as_default=True)
-    bus = dbus.SystemBus()
+            power['source'] = 'BATTERY' if bool(changed['OnBattery']) else 'AC'
 
     # add dbus receiver only if undervolt/IccMax is enabled in config
     if any(
@@ -1024,7 +1010,7 @@ def main():
         handle_ac_callback,
         signal_name="PropertiesChanged",
         dbus_interface="org.freedesktop.DBus.Properties",
-        path="/org/freedesktop/UPower/devices/line_power_AC",
+        path="/org/freedesktop/UPower",
     )
 
     log('[I] Starting main loop.')
