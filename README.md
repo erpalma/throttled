@@ -75,6 +75,14 @@ sudo rc-update add throttled default
 sudo rc-service throttled start
 ```
 
+### Alpine Linux
+You need to be on `edge` and have the `testing` repository enabled.
+```
+doas apk add throttled
+doas rc-update add throttled
+doas rc-service throttled start
+```
+
 ### Debian/Ubuntu
 ```
 sudo apt install git build-essential python3-dev libdbus-glib-1-dev libgirepository1.0-dev libcairo2-dev python3-cairo-dev python3-venv python3-wheel
