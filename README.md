@@ -56,6 +56,8 @@ Note that some kernels (e.g. [linux-hardened](https://www.archlinux.org/packages
 ### Thermald
 As discovered by *DEvil0000* the Linux Thermal Monitor ([thermald](https://github.com/intel/thermal_daemon)) can conflict with the purpose of this tool. In particular, thermald might be pre-installed (e.g. on Ubuntu) and configured in such a way to keep the CPU temperature below a certain threshold (~80 'C) by applying throttling or messing up with RAPL or other CPU-specific registers. I strongly suggest to either disable/uninstall it or to review its default configuration.
 
+Note that on some platforms thermald seems to be required. E.g. Dell Latitude 7320 i7-1185G7, Linux 6.6.48, Void Linux musl, still runs into throttling issues unless `thermald --adaptive` is running. If you are running throttled but still seeing throttling issues, try testing with `thermald --adaptive` running as well.
+
 ### Update
 The tool is now running with Python3 by default (tested w/ 3.6) and a virtualenv is automatically created in `/opt/throttled`. Python2 should probably still work.
 
