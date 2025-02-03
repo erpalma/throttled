@@ -222,8 +222,11 @@ def warning(msg, oneshot=True, end='\n'):
         log_history.add(msg.strip())
 
 
+def get_msr_list():
+    return ['/dev/cpu/{:d}/msr'.format(int(x)) for x in os.listdir("/dev/cpu")]
+
 def writemsr(msr, val):
-    msr_list = ['/dev/cpu/{:d}/msr'.format(x) for x in range(cpu_count())]
+    msr_list = get_msr_list()
     if not os.path.exists(msr_list[0]):
         try:
             subprocess.check_call(('modprobe', 'msr'))
@@ -254,7 +257,7 @@ def readmsr(msr, from_bit=0, to_bit=63, cpu=None, flatten=False):
     assert cpu is None or cpu in range(cpu_count())
     if from_bit > to_bit:
         fatal('Wrong readmsr bit params')
-    msr_list = ['/dev/cpu/{:d}/msr'.format(x) for x in range(cpu_count())]
+    msr_list = get_msr_list()
     if not os.path.exists(msr_list[0]):
         try:
             subprocess.check_call(('modprobe', 'msr'))
