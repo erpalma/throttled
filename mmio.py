@@ -119,6 +119,26 @@ class MMIO(object):
         self._validate_offset(offset, 4)
         self.mapping[offset : offset + 4] = struct.pack("=L", value)
 
+    def read64(self, offset: int) -> int:
+        if not isinstance(offset, int):
+            raise TypeError("Invalid offset type, should be integer.")
+
+        offset = self._adjust_offset(offset)
+        self._validate_offset(offset, 8)
+        return struct.unpack("=Q", self.mapping[offset : offset + 8])[0]
+
+    def write64(self, offset: int, value: int) -> None:
+        if not isinstance(offset, int):
+            raise TypeError("Invalid offset type, should be integer.")
+        if not isinstance(value, int):
+            raise TypeError("Invalid value type, should be integer.")
+        if value < 0 or value > 0xFFFFFFFFFFFFFFFF:
+            raise ValueError("Value out of bounds.")
+
+        offset = self._adjust_offset(offset)
+        self._validate_offset(offset, 8)
+        self.mapping[offset : offset + 8] = struct.pack("=Q", value)
+
     def close(self) -> None:
         """Unmap the MMIO object's mapped physical memory."""
         if self.mapping is None:
