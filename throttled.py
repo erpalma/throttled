@@ -223,7 +223,8 @@ def warning(msg, oneshot=True, end='\n'):
 
 
 def get_msr_list():
-    return ['/dev/cpu/{:d}/msr'.format(int(x)) for x in os.listdir("/dev/cpu")]
+    cpus = sorted(int(x) for x in os.listdir('/dev/cpu') if x.isdigit())
+    return ['/dev/cpu/{:d}/msr'.format(cpu) for cpu in cpus]
 
 def writemsr(msr, val):
     msr_list = get_msr_list()
@@ -235,9 +236,11 @@ def writemsr(msr, val):
     try:
         for addr in msr_list:
             f = os.open(addr, os.O_WRONLY)
-            os.lseek(f, MSR_DICT[msr], os.SEEK_SET)
-            os.write(f, struct.pack('Q', val))
-            os.close(f)
+            try:
+                os.lseek(f, MSR_DICT[msr], os.SEEK_SET)
+                os.write(f, struct.pack('Q', val))
+            finally:
+                os.close(f)
     except (IOError, OSError) as e:
         if TESTMSR:
             raise e
@@ -267,9 +270,11 @@ def readmsr(msr, from_bit=0, to_bit=63, cpu=None, flatten=False):
         output = []
         for addr in msr_list:
             f = os.open(addr, os.O_RDONLY)
-            os.lseek(f, MSR_DICT[msr], os.SEEK_SET)
-            val = struct.unpack('Q', os.read(f, 8))[0]
-            os.close(f)
+            try:
+                os.lseek(f, MSR_DICT[msr], os.SEEK_SET)
+                val = struct.unpack('Q', os.read(f, 8))[0]
+            finally:
+                os.close(f)
             output.append(get_value_for_bits(val, from_bit, to_bit))
         if flatten:
             if len(set(output)) > 1:
@@ -312,15 +317,16 @@ def is_on_battery(config):
         for path in glob.glob(config.get('GENERAL', 'Sysfs_Power_Path', fallback=DEFAULT_SYSFS_POWER_PATH)):
             with open(path) as f:
                 return not bool(int(f.read()))
-        raise
-    except:
+    except (IOError, OSError, ValueError) as e:
+        warning('Sysfs_Power_Path read failed ({}). Trying upower method.'.format(e))
+    else:
         warning('No valid Sysfs_Power_Path found! Trying upower method')
     try:
         bus = dbus.SystemBus()
         proxy = bus.get_object('org.freedesktop.UPower', '/org/freedesktop/UPower')
         iface = dbus.Interface(proxy, 'org.freedesktop.DBus.Properties')
-        return iface.Get('org.freedesktop.UPower', 'OnBattery')
-    except:
+        return bool(iface.Get('org.freedesktop.UPower', 'OnBattery'))
+    except dbus.DBusException:
         pass
 
     warning('No valid power detection methods found. Assuming that the system is running on battery power.')
@@ -660,7 +666,7 @@ def set_disable_bdprochot():
     writemsr('MSR_POWER_CTL', new_val)
     if args.debug:
         read_value = readmsr('MSR_POWER_CTL', from_bit=0, to_bit=0)[0]
-        match = OK if ~read_value else ERR
+        match = OK if read_value == 0 else ERR
         log('[D] BDPROCHOT - write "{:#02x}" - read "{:#02x}" - match {}'.format(0, read_value, match))
 
 
@@ -790,8 +796,7 @@ def power_thread(config, regs, exit_event, cpuid):
             set_hwp(enable_hwp_mode)
             next_hwp_write = time() + HWP_INTERVAL
 
-        else:
-            exit_event.wait(wait_t)
+        exit_event.wait(wait_t)
 
 
 def check_kernel():
@@ -859,24 +864,25 @@ def check_cpu():
 
 
 def test_msr_rw_capabilities():
+    global TESTMSR
     TESTMSR = True
-
     try:
-        log('[I] Testing if undervolt is supported...')
-        get_undervolt()
-    except:
-        warning('Undervolt seems not to be supported by your system, disabling.')
-        UNSUPPORTED_FEATURES.append('UNDERVOLT')
+        try:
+            log('[I] Testing if undervolt is supported...')
+            get_undervolt()
+        except (IOError, OSError):
+            warning('Undervolt seems not to be supported by your system, disabling.')
+            UNSUPPORTED_FEATURES.append('UNDERVOLT')
 
-    try:
-        log('[I] Testing if HWP is supported...')
-        cur_val = readmsr('IA32_HWP_REQUEST', cpu=0)
-        writemsr('IA32_HWP_REQUEST', cur_val)
-    except:
-        warning('HWP seems not to be supported by your system, disabling.')
-        UNSUPPORTED_FEATURES.append('HWP')
-
-    TESTMSR = False
+        try:
+            log('[I] Testing if HWP is supported...')
+            cur_val = readmsr('IA32_HWP_REQUEST', cpu=0)
+            writemsr('IA32_HWP_REQUEST', cur_val)
+        except (IOError, OSError):
+            warning('HWP seems not to be supported by your system, disabling.')
+            UNSUPPORTED_FEATURES.append('HWP')
+    finally:
+        TESTMSR = False
 
 
 def monitor(exit_event, wait):
@@ -958,6 +964,7 @@ def main():
             args.log = None
             fatal('Unable to write to the log file!')
 
+    cpuid = None
     if not args.force:
         check_kernel()
         cpuid = check_cpu()

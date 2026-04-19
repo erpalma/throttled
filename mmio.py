@@ -61,8 +61,14 @@ class MMIO(object):
 
         try:
             self.mapping = mmap.mmap(
-                fd, self._aligned_size, flags=mmap.MAP_SHARED, prot=mmap.PROT_WRITE, offset=self._aligned_physaddr)
+                fd,
+                self._aligned_size,
+                flags=mmap.MAP_SHARED,
+                prot=mmap.PROT_READ | mmap.PROT_WRITE,
+                offset=self._aligned_physaddr,
+            )
         except OSError as e:
+            os.close(fd)
             raise MMIOError(e.errno, "Mapping /dev/mem: " + e.strerror)
 
         try:
@@ -126,9 +132,7 @@ class MMIO(object):
         self.mapping.close()
         self.mapping = None
 
-        self._fd = None
-
     # String representation
 
     def __str__(self):
-        return "MMIO 0x%08x (size=%d)" % (self.base, self.size)
+        return "MMIO 0x%08x (size=%d)" % (self._physaddr, self._size)
