@@ -787,14 +787,7 @@ def power_thread(config, regs, exit_event, cpuid):
         wait_t = config.getfloat(power['source'], 'Update_Rate_s')
         enable_hwp_mode = config.getboolean('AC', 'HWP_Mode', fallback=None)
         # set HWP less frequently. Just to be safe since (e.g.) TLP might reset this value
-        if (
-            enable_hwp_mode
-            and next_hwp_write <= time()
-            and (
-                (power['method'] == 'dbus' and power['source'] == 'AC')
-                or (power['method'] == 'polling' and not is_on_battery(config))
-            )
-        ):
+        if enable_hwp_mode and next_hwp_write <= time() and power['source'] == 'AC':
             set_hwp(enable_hwp_mode)
             next_hwp_write = time() + HWP_INTERVAL
 
