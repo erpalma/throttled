@@ -195,30 +195,33 @@ LIM = bcolors.YELLOW + bcolors.BOLD + 'LIM' + bcolors.RESET
 
 log_history = set()
 
+ANSI_ESCAPE_RE = re.compile(r'\x1b\[[0-9;]*m')
+
+
+def _format(prefix, msg):
+    tstamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
+    if args.log:
+        return '{:s}: {:s}{:s}'.format(tstamp, prefix, ANSI_ESCAPE_RE.sub('', msg))
+    return '{:s}{:s}'.format(prefix, msg)
+
 
 def log(msg, oneshot=False, end='\n'):
     outfile = args.log if args.log else sys.stdout
     if msg.strip() not in log_history or oneshot is False:
-        tstamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
-        full_msg = '{:s}: {:s}'.format(tstamp, msg) if args.log else msg
-        print(full_msg, file=outfile, end=end)
+        print(_format('', msg), file=outfile, end=end)
         log_history.add(msg.strip())
 
 
 def fatal(msg, code=1, end='\n'):
     outfile = args.log if args.log else sys.stderr
-    tstamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
-    full_msg = '{:s}: [E] {:s}'.format(tstamp, msg) if args.log else '[E] {:s}'.format(msg)
-    print(full_msg, file=outfile, end=end)
+    print(_format('[E] ', msg), file=outfile, end=end)
     sys.exit(code)
 
 
 def warning(msg, oneshot=True, end='\n'):
     outfile = args.log if args.log else sys.stderr
     if msg.strip() not in log_history or oneshot is False:
-        tstamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]
-        full_msg = '{:s}: [W] {:s}'.format(tstamp, msg) if args.log else '[W] {:s}'.format(msg)
-        print(full_msg, file=outfile, end=end)
+        print(_format('[W] ', msg), file=outfile, end=end)
         log_history.add(msg.strip())
 
 
@@ -308,7 +311,7 @@ def set_msr_allow_writes():
         try:
             with open('/sys/module/msr/parameters/allow_writes', 'w') as f:
                 f.write('on')
-        except:
+        except OSError:
             warning('Unable to set MSR allow_writes to on. You might experience warnings in kernel logs.')
 
 
@@ -754,28 +757,29 @@ def power_thread(config, regs, exit_event, cpuid):
                 )
 
         # set PL1/2 on MSR
-        write_value = regs[power['source']]['MSR_PKG_POWER_LIMIT']
-        writemsr('MSR_PKG_POWER_LIMIT', write_value)
-        if args.debug:
-            read_value = readmsr('MSR_PKG_POWER_LIMIT', 0, 55, flatten=True)
-            match = OK if write_value == read_value else ERR
-            log(
-                '[D] MSR PACKAGE_POWER_LIMIT - write {:#x} - read {:#x} - match {}'.format(
-                    write_value, read_value, match
-                )
-            )
-        if mchbar_mmio is not None:
-            # set MCHBAR register to the same PL1/2 values
-            mchbar_mmio.write32(0, write_value & 0xFFFFFFFF)
-            mchbar_mmio.write32(4, write_value >> 32)
+        if 'MSR_PKG_POWER_LIMIT' in regs[power['source']]:
+            write_value = regs[power['source']]['MSR_PKG_POWER_LIMIT']
+            writemsr('MSR_PKG_POWER_LIMIT', write_value)
             if args.debug:
-                read_value = mchbar_mmio.read32(0) | (mchbar_mmio.read32(4) << 32)
+                read_value = readmsr('MSR_PKG_POWER_LIMIT', 0, 55, flatten=True)
                 match = OK if write_value == read_value else ERR
                 log(
-                    '[D] MCHBAR PACKAGE_POWER_LIMIT - write {:#x} - read {:#x} - match {}'.format(
+                    '[D] MSR PACKAGE_POWER_LIMIT - write {:#x} - read {:#x} - match {}'.format(
                         write_value, read_value, match
                     )
                 )
+            if mchbar_mmio is not None:
+                # set MCHBAR register to the same PL1/2 values
+                mchbar_mmio.write32(0, write_value & 0xFFFFFFFF)
+                mchbar_mmio.write32(4, write_value >> 32)
+                if args.debug:
+                    read_value = mchbar_mmio.read32(0) | (mchbar_mmio.read32(4) << 32)
+                    match = OK if write_value == read_value else ERR
+                    log(
+                        '[D] MCHBAR PACKAGE_POWER_LIMIT - write {:#x} - read {:#x} - match {}'.format(
+                            write_value, read_value, match
+                        )
+                    )
 
         # Disable BDPROCHOT
         disable_bdprochot = config.getboolean(power['source'], 'Disable_BDPROCHOT', fallback=None)
@@ -858,9 +862,9 @@ def check_cpu():
         log('[I] Detected CPU architecture: Intel {:s}'.format(supported_cpus[cpuid]))
         return cpuid
     except SystemExit:
-        sys.exit(1)
-    except:
-        fatal('Unable to identify CPU model.')
+        raise
+    except (OSError, KeyError, ValueError) as e:
+        fatal('Unable to identify CPU model: {}'.format(e))
 
 
 def test_msr_rw_capabilities():
@@ -960,9 +964,9 @@ def main():
     if args.log:
         try:
             args.log = open(args.log, 'w')
-        except:
+        except OSError as e:
             args.log = None
-            fatal('Unable to write to the log file!')
+            fatal('Unable to write to the log file: {}'.format(e))
 
     cpuid = None
     if not args.force:
