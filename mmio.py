@@ -120,6 +120,7 @@ class MMIO(object):
         self.mapping[offset : offset + 4] = struct.pack("=L", value)
 
     def read64(self, offset: int) -> int:
+        """Read 64-bits from the specified `offset` in bytes, relative to the base physical address of the MMIO region."""
         if not isinstance(offset, int):
             raise TypeError("Invalid offset type, should be integer.")
 
@@ -128,6 +129,7 @@ class MMIO(object):
         return struct.unpack("=Q", self.mapping[offset : offset + 8])[0]
 
     def write64(self, offset: int, value: int) -> None:
+        """Write 64-bits to the specified `offset` in bytes, relative to the base physical address of the MMIO region."""
         if not isinstance(offset, int):
             raise TypeError("Invalid offset type, should be integer.")
         if not isinstance(value, int):
