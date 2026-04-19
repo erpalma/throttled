@@ -770,10 +770,9 @@ def power_thread(config, regs, exit_event, cpuid):
                 log(f'[D] MSR PACKAGE_POWER_LIMIT - write {write_value:#x} - read {read_value:#x} - match {match}')
             if mchbar_mmio is not None:
                 # set MCHBAR register to the same PL1/2 values
-                mchbar_mmio.write32(0, write_value & 0xFFFFFFFF)
-                mchbar_mmio.write32(4, write_value >> 32)
+                mchbar_mmio.write64(0, write_value)
                 if args.debug:
-                    read_value = mchbar_mmio.read32(0) | (mchbar_mmio.read32(4) << 32)
+                    read_value = mchbar_mmio.read64(0)
                     match = OK if write_value == read_value else ERR
                     log(
                         f'[D] MCHBAR PACKAGE_POWER_LIMIT - write {write_value:#x} - read {read_value:#x} - match {match}'
