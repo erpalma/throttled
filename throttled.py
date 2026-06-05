@@ -749,8 +749,14 @@ def reload_config():
     return config, regs
 
 
-def power_thread(config, regs, exit_event, cpuid):
-    """Daemon main loop: periodically (re-)apply throttling MSRs."""
+def power_thread(state, exit_event, cpuid):
+    """Daemon main loop: periodically (re-)apply throttling MSRs.
+
+    `state` is a shared {'config', 'regs'} dict so that an autoreload here is
+    visible to the D-Bus callbacks in main() too; the local config/regs are
+    kept in sync with it for the rest of the loop.
+    """
+    config, regs = state['config'], state['regs']
     try:
         MCHBAR_BASE = int(check_output(('setpci', '-s', '0:0.0', '48.l')), 16)
     except CalledProcessError:
@@ -784,7 +790,8 @@ def power_thread(config, regs, exit_event, cpuid):
             config_write_time = get_config_write_time()
             if config_write_time and last_config_write_time != config_write_time:
                 last_config_write_time = config_write_time
-                config, regs = reload_config()
+                state['config'], state['regs'] = reload_config()
+                config, regs = state['config'], state['regs']
 
         # switch back to sysfs polling
         if power['method'] == 'polling':
@@ -1040,16 +1047,22 @@ def main():
     set_icc_max(config)
     set_hwp(config.getboolean('AC', 'HWP_Mode', fallback=None))
 
+    # Shared, mutable handle so config/regs updates the power thread makes on
+    # autoreload are seen by the D-Bus callbacks below, which would otherwise
+    # keep applying the config captured at startup (e.g. re-asserting a stale
+    # undervolt offset on resume from sleep after the config was edited).
+    state = {'config': config, 'regs': regs}
+
     exit_event = Event()
-    thread = Thread(target=power_thread, args=(config, regs, exit_event, cpuid))
+    thread = Thread(target=power_thread, args=(state, exit_event, cpuid))
     thread.daemon = True
     thread.start()
 
     # handle dbus events for applying undervolt/IccMax on resume from sleep/hibernate
     def handle_sleep_callback(sleeping):
         if not sleeping:
-            undervolt(config)
-            set_icc_max(config)
+            undervolt(state['config'])
+            set_icc_max(state['config'])
 
     def handle_ac_callback(if_name, changed, invalidated):
         if "OnBattery" in changed:
