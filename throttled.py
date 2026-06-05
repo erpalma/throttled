@@ -205,9 +205,13 @@ def _format(prefix, msg):
 
 def log(msg, oneshot=False, end='\n'):
     outfile = args.log if args.log else sys.stdout
-    if msg.strip() not in log_history or oneshot is False:
+    if not oneshot or msg.strip() not in log_history:
         print(_format('', msg), file=outfile, end=end)
-        log_history.add(msg.strip())
+        # Only oneshot messages are remembered for de-duplication; recording
+        # every line would make log_history grow without bound (e.g. the
+        # ever-changing status line in --monitor mode).
+        if oneshot:
+            log_history.add(msg.strip())
 
 
 def fatal(msg, code=1, end='\n'):
@@ -218,9 +222,10 @@ def fatal(msg, code=1, end='\n'):
 
 def warning(msg, oneshot=True, end='\n'):
     outfile = args.log if args.log else sys.stderr
-    if msg.strip() not in log_history or oneshot is False:
+    if not oneshot or msg.strip() not in log_history:
         print(_format('[W] ', msg), file=outfile, end=end)
-        log_history.add(msg.strip())
+        if oneshot:
+            log_history.add(msg.strip())
 
 
 def get_msr_list():
