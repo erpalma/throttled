@@ -228,20 +228,47 @@ def warning(msg, oneshot=True, end='\n'):
             log_history.add(msg.strip())
 
 
+def get_cpu_list():
+    """Return the sorted CPU indices that expose a /dev/cpu/N entry.
+
+    Returns an empty list when /dev/cpu does not exist yet (msr module not
+    loaded), so callers can decide to load it rather than crashing.
+    """
+    try:
+        entries = os.listdir('/dev/cpu')
+    except FileNotFoundError:
+        return []
+    return sorted(int(x) for x in entries if x.isdigit())
+
+
 def get_msr_list():
     """Return the per-CPU MSR device paths in CPU-index order."""
-    cpus = sorted(int(x) for x in os.listdir('/dev/cpu') if x.isdigit())
-    return [f'/dev/cpu/{cpu:d}/msr' for cpu in cpus]
+    return [f'/dev/cpu/{cpu:d}/msr' for cpu in get_cpu_list()]
 
 
-def writemsr(msr, val):
-    """Write a 64-bit value to the named MSR on every online CPU."""
+def _ensure_msr_module():
+    """Return the per-CPU MSR device list, loading the msr module first if the
+    devices are not present yet. Fatal if they cannot be made to appear.
+
+    Guarding on an empty list matters: without the msr module /dev/cpu may be
+    absent or hold no numeric entries, in which case indexing msr_list[0]
+    would raise IndexError before the modprobe recovery could run.
+    """
     msr_list = get_msr_list()
-    if not os.path.exists(msr_list[0]):
+    if not msr_list or not os.path.exists(msr_list[0]):
         try:
             subprocess.check_call(('modprobe', 'msr'))
         except subprocess.CalledProcessError:
             fatal('Unable to load the msr module.')
+        msr_list = get_msr_list()
+    if not msr_list:
+        fatal('No MSR devices found under /dev/cpu after loading the msr module.')
+    return msr_list
+
+
+def writemsr(msr, val):
+    """Write a 64-bit value to the named MSR on every online CPU."""
+    msr_list = _ensure_msr_module()
     try:
         for addr in msr_list:
             f = os.open(addr, os.O_WRONLY)
@@ -273,12 +300,7 @@ def readmsr(msr, from_bit=0, to_bit=63, cpu=None, flatten=False):
     assert cpu is None or cpu in range(cpu_count())
     if from_bit > to_bit:
         fatal('Wrong readmsr bit params')
-    msr_list = get_msr_list()
-    if not os.path.exists(msr_list[0]):
-        try:
-            subprocess.check_call(('modprobe', 'msr'))
-        except subprocess.CalledProcessError:
-            fatal('Unable to load the msr module.')
+    msr_list = _ensure_msr_module()
     try:
         output = []
         for addr in msr_list:
@@ -293,7 +315,15 @@ def readmsr(msr, from_bit=0, to_bit=63, cpu=None, flatten=False):
             if len(set(output)) > 1:
                 warning(f'Found multiple values for {msr:s} ({MSR_DICT[msr]:x}). This should never happen.')
             return output[0]
-        return output[cpu] if cpu is not None else output
+        if cpu is not None:
+            # output is positional over msr_list; map the CPU *number* to its
+            # slot so a gap in /dev/cpu (offline cores) can't return the wrong
+            # CPU or IndexError.
+            target = f'/dev/cpu/{cpu:d}/msr'
+            if target not in msr_list:
+                fatal(f'CPU {cpu:d} has no MSR device under /dev/cpu.')
+            return output[msr_list.index(target)]
+        return output
     except (IOError, OSError) as e:
         if TESTMSR:
             raise e
@@ -364,10 +394,12 @@ def get_reset_thermal_status():
     """Read IA32_THERM_STATUS for every CPU, then clear the sticky log bits."""
     thermal_status_msr_value = readmsr('IA32_THERM_STATUS')
     thermal_status = []
-    for core in range(cpu_count()):
+    # iterate over the values actually read (one per /dev/cpu entry) rather than
+    # range(cpu_count()): the two can disagree if a core is offline.
+    for msr_value in thermal_status_msr_value:
         thermal_status_core = {}
         for key, value in thermal_status_bits.items():
-            thermal_status_core[key] = int(get_value_for_bits(thermal_status_msr_value[core], value[0], value[1]))
+            thermal_status_core[key] = int(get_value_for_bits(msr_value, value[0], value[1]))
         thermal_status.append(thermal_status_core)
     # reset log bits
     writemsr('IA32_THERM_STATUS', 0)
