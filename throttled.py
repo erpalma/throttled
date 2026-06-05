@@ -632,6 +632,17 @@ def calc_reg_values(platform_info, config):
 
             Trip_Temp_C = config.getfloat(power_source, 'Trip_Temp_C', fallback=None)
             if Trip_Temp_C is not None:
+                # Enforce the >=3C-from-critical ceiling (and the 40C floor) here:
+                # the real range is only known after reading the critical temp, so
+                # load_config()'s earlier clamp against the static [40, 97] range
+                # cannot keep the configured trip below critical-3 on its own.
+                clamped = min(TRIP_TEMP_RANGE[1], max(TRIP_TEMP_RANGE[0], Trip_Temp_C))
+                if clamped != Trip_Temp_C:
+                    log(
+                        f'[!] Overriding "Trip_Temp_C" in "{power_source:s}" to stay within '
+                        f'[{TRIP_TEMP_RANGE[0]:d}, {TRIP_TEMP_RANGE[1]:d}] C: {Trip_Temp_C:.1f} -> {clamped:.1f}'
+                    )
+                    Trip_Temp_C = clamped
                 trip_offset = int(round(critical_temp - Trip_Temp_C))
                 regs[power_source]['MSR_TEMPERATURE_TARGET'] = trip_offset << 24
             else:
