@@ -749,6 +749,43 @@ def reload_config():
     return config, regs
 
 
+def _read_mchbar_dword(method=None):
+    """Read MCHBAR config register 0x48 of 0:0.0 via setpci, optionally forcing
+    a pcilib access method. Returns the int value, or None on failure."""
+    cmd = ['setpci', '-s', '0:0.0', '48.l']
+    if method:
+        cmd[1:1] = ['-A', method]
+    try:
+        return int(check_output(cmd), 16)
+    except (CalledProcessError, ValueError, FileNotFoundError):
+        # FileNotFoundError = setpci / the pciutils package not installed; it
+        # must not propagate out of the power thread.
+        return None
+
+
+def read_mchbar_base(cpuid):
+    """Return the MCHBAR base address (PCI config 0:0.0 register 0x48).
+
+    Register 0x48 lives past the first 64 config bytes, so setpci's default
+    paths need CAP_SYS_ADMIN (sysfs) or iopl (port I/O). A hardened/sandboxed
+    daemon may have neither, in which case pcilib returns 0xffffffff -- which
+    must not be taken at face value, as it yields an unmappable address and a
+    misleading "/dev/mem" error. The 'ecam' method reads config space via MMIO
+    (/dev/mem, reachable with CAP_SYS_RAWIO), so it still works under such a
+    sandbox; try it first, then the default method, accepting the first value
+    that is neither all-ones/zero nor has the enable bit (bit 0) clear. Only if
+    both fail do we fall back to a per-CPU guess.
+    """
+    for method in ('ecam', None):
+        base = _read_mchbar_dword(method)
+        if base is not None and base not in (0x0, 0xFFFFFFFF) and base & 1:
+            return base
+    warning('Could not read a valid MCHBAR base via setpci (is the pciutils package installed?); guessing from CPUID. This MIGHT NOT WORK!')
+    if cpuid in ((6, 140, 1), (6, 140, 2), (6, 141, 1), (6, 151, 2), (6, 151, 5), (6, 154, 3), (6, 154, 4)):
+        return 0xFEDC0001
+    return 0xFED10001
+
+
 def power_thread(state, exit_event, cpuid):
     """Daemon main loop: periodically (re-)apply throttling MSRs.
 
@@ -757,17 +794,9 @@ def power_thread(state, exit_event, cpuid):
     kept in sync with it for the rest of the loop.
     """
     config, regs = state['config'], state['regs']
+    mchbar_base = read_mchbar_base(cpuid)
     try:
-        MCHBAR_BASE = int(check_output(('setpci', '-s', '0:0.0', '48.l')), 16)
-    except CalledProcessError:
-        warning('Please ensure that "setpci" is in path. This is typically provided by the "pciutils" package.')
-        warning('Trying to guess the MCHBAR address from the CPUID. This MIGHT NOT WORK!')
-        if cpuid in ((6, 140, 1), (6, 140, 2), (6, 141, 1), (6, 151, 2), (6, 151, 5), (6, 154, 3), (6, 154, 4)):
-            MCHBAR_BASE = 0xFEDC0001
-        else:
-            MCHBAR_BASE = 0xFED10001
-    try:
-        mchbar_mmio = MMIO(MCHBAR_BASE + 0x599F, 8)
+        mchbar_mmio = MMIO(mchbar_base + 0x599F, 8)
     except MMIOError:
         warning('Unable to open /dev/mem. TDP override might not work correctly.')
         warning('Try to disable Secure Boot and/or enable CONFIG_DEVMEM in kernel config.')
