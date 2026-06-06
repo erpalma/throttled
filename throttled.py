@@ -12,7 +12,6 @@ import sys
 from collections import defaultdict
 from datetime import datetime
 from errno import EACCES, EIO, EPERM
-from multiprocessing import cpu_count
 from platform import uname
 from subprocess import check_output, CalledProcessError
 from threading import Event, Thread
@@ -209,9 +208,10 @@ def _format(prefix, msg):
 
 def log(msg, oneshot=False, end='\n'):
     outfile = args.log if args.log else sys.stdout
-    if msg.strip() not in log_history or oneshot is False:
+    if not oneshot or msg.strip() not in log_history:
         print(_format('', msg), file=outfile, end=end)
-        log_history.add(msg.strip())
+        if oneshot:
+            log_history.add(msg.strip())
 
 
 def fatal(msg, code=1, end='\n'):
@@ -222,25 +222,43 @@ def fatal(msg, code=1, end='\n'):
 
 def warning(msg, oneshot=True, end='\n'):
     outfile = args.log if args.log else sys.stderr
-    if msg.strip() not in log_history or oneshot is False:
+    if not oneshot or msg.strip() not in log_history:
         print(_format('[W] ', msg), file=outfile, end=end)
-        log_history.add(msg.strip())
+        if oneshot:
+            log_history.add(msg.strip())
+
+
+def get_cpu_list():
+    """Return sorted CPU indices that expose a /dev/cpu/N entry."""
+    try:
+        entries = os.listdir('/dev/cpu')
+    except FileNotFoundError:
+        return []
+    return sorted(int(x) for x in entries if x.isdigit())
 
 
 def get_msr_list():
     """Return the per-CPU MSR device paths in CPU-index order."""
-    cpus = sorted(int(x) for x in os.listdir('/dev/cpu') if x.isdigit())
-    return [f'/dev/cpu/{cpu:d}/msr' for cpu in cpus]
+    return [f'/dev/cpu/{cpu:d}/msr' for cpu in get_cpu_list()]
 
 
-def writemsr(msr, val):
-    """Write a 64-bit value to the named MSR on every online CPU."""
+def _ensure_msr_module():
+    """Return MSR devices, loading the msr module if the devices are missing."""
     msr_list = get_msr_list()
-    if not os.path.exists(msr_list[0]):
+    if not msr_list or not os.path.exists(msr_list[0]):
         try:
             subprocess.check_call(('modprobe', 'msr'))
         except subprocess.CalledProcessError:
             fatal('Unable to load the msr module.')
+        msr_list = get_msr_list()
+    if not msr_list or not os.path.exists(msr_list[0]):
+        fatal('No MSR devices found under /dev/cpu after loading the msr module.')
+    return msr_list
+
+
+def writemsr(msr, val):
+    """Write a 64-bit value to the named MSR on every online CPU."""
+    msr_list = _ensure_msr_module()
     try:
         for addr in msr_list:
             f = os.open(addr, os.O_WRONLY)
@@ -269,15 +287,11 @@ def readmsr(msr, from_bit=0, to_bit=63, cpu=None, flatten=False):
     cpu=N returns just CPU N, with flatten=True returns the shared value
     (warning if CPUs disagree).
     """
-    assert cpu is None or cpu in range(cpu_count())
+    if cpu is not None and cpu < 0:
+        fatal('Wrong readmsr cpu param')
     if from_bit > to_bit:
         fatal('Wrong readmsr bit params')
-    msr_list = get_msr_list()
-    if not os.path.exists(msr_list[0]):
-        try:
-            subprocess.check_call(('modprobe', 'msr'))
-        except subprocess.CalledProcessError:
-            fatal('Unable to load the msr module.')
+    msr_list = _ensure_msr_module()
     try:
         output = []
         for addr in msr_list:
@@ -292,7 +306,12 @@ def readmsr(msr, from_bit=0, to_bit=63, cpu=None, flatten=False):
             if len(set(output)) > 1:
                 warning(f'Found multiple values for {msr:s} ({MSR_DICT[msr]:x}). This should never happen.')
             return output[0]
-        return output[cpu] if cpu is not None else output
+        if cpu is not None:
+            target = f'/dev/cpu/{cpu:d}/msr'
+            if target not in msr_list:
+                fatal(f'CPU {cpu:d} has no MSR device under /dev/cpu.')
+            return output[msr_list.index(target)]
+        return output
     except (IOError, OSError) as e:
         if TESTMSR:
             raise e
@@ -375,8 +394,13 @@ def is_on_battery(config):
     return True
 
 
-def handle_sleep_prepare(sleeping, config):
+def _current_config(config_or_state):
+    return config_or_state['config'] if isinstance(config_or_state, dict) else config_or_state
+
+
+def handle_sleep_prepare(sleeping, config_or_state):
     if not sleeping:
+        config = _current_config(config_or_state)
         undervolt(config)
         set_icc_max(config)
 
@@ -393,7 +417,8 @@ def should_listen_for_resume(config):
     )
 
 
-async def setup_dbus_signal_handlers(config):
+async def setup_dbus_signal_handlers(config_or_state):
+    config = _current_config(config_or_state)
     MessageBus, BusType = get_dbus_next()
     bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
     context = {'bus': bus}
@@ -409,7 +434,7 @@ async def setup_dbus_signal_handlers(config):
             login1_introspection = await bus.introspect(LOGIN1_SERVICE, LOGIN1_PATH)
             login1 = bus.get_proxy_object(LOGIN1_SERVICE, LOGIN1_PATH, login1_introspection)
             login1_manager = login1.get_interface(LOGIN1_MANAGER_INTERFACE)
-            login1_manager.on_prepare_for_sleep(lambda sleeping: handle_sleep_prepare(sleeping, config))
+            login1_manager.on_prepare_for_sleep(lambda sleeping: handle_sleep_prepare(sleeping, config_or_state))
             context['login1'] = login1
             context['login1_manager'] = login1_manager
 
@@ -419,8 +444,8 @@ async def setup_dbus_signal_handlers(config):
         raise
 
 
-async def run_dbus_loop(config):
-    context = await setup_dbus_signal_handlers(config)
+async def run_dbus_loop(config_or_state):
+    context = await setup_dbus_signal_handlers(config_or_state)
     try:
         await asyncio.Future()
     finally:
@@ -440,10 +465,10 @@ def get_reset_thermal_status():
     """Read IA32_THERM_STATUS for every CPU, then clear the sticky log bits."""
     thermal_status_msr_value = readmsr('IA32_THERM_STATUS')
     thermal_status = []
-    for core in range(cpu_count()):
+    for msr_value in thermal_status_msr_value:
         thermal_status_core = {}
         for key, value in thermal_status_bits.items():
-            thermal_status_core[key] = int(get_value_for_bits(thermal_status_msr_value[core], value[0], value[1]))
+            thermal_status_core[key] = int(get_value_for_bits(msr_value, value[0], value[1]))
         thermal_status.append(thermal_status_core)
     # reset log bits
     writemsr('IA32_THERM_STATUS', 0)
@@ -676,6 +701,14 @@ def calc_reg_values(platform_info, config):
 
             Trip_Temp_C = config.getfloat(power_source, 'Trip_Temp_C', fallback=None)
             if Trip_Temp_C is not None:
+                valid_trip_temp = min(TRIP_TEMP_RANGE[1], max(TRIP_TEMP_RANGE[0], Trip_Temp_C))
+                if valid_trip_temp != Trip_Temp_C:
+                    log(
+                        f'[!] Overriding "Trip_Temp_C" in "{power_source:s}" to stay within '
+                        f'[{TRIP_TEMP_RANGE[0]:d}, {TRIP_TEMP_RANGE[1]:d}] C: '
+                        f'{Trip_Temp_C:.1f} -> {valid_trip_temp:.1f}'
+                    )
+                    Trip_Temp_C = valid_trip_temp
                 trip_offset = int(round(critical_temp - Trip_Temp_C))
                 regs[power_source]['MSR_TEMPERATURE_TARGET'] = trip_offset << 24
             else:
@@ -782,19 +815,39 @@ def reload_config():
     return config, regs
 
 
-def power_thread(config, regs, exit_event, cpuid):
+def _read_mchbar_dword(method=None):
+    """Read MCHBAR PCI config register 0x48 for device 0:0.0."""
+    cmd = ['setpci', '-s', '0:0.0', '48.l']
+    if method:
+        cmd[1:1] = ['-A', method]
+    try:
+        return int(check_output(cmd), 16)
+    except (CalledProcessError, FileNotFoundError, ValueError):
+        return None
+
+
+def read_mchbar_base(cpuid):
+    """Return the enabled MCHBAR base, falling back to a CPUID-based guess."""
+    for method in ('ecam', None):
+        base = _read_mchbar_dword(method)
+        if base is not None and base not in (0, 0xFFFFFFFF) and base & 1:
+            return base
+
+    warning(
+        'Could not read a valid MCHBAR base via setpci. This is typically provided by the "pciutils" package.'
+    )
+    warning('Trying to guess the MCHBAR address from the CPUID. This MIGHT NOT WORK!')
+    if cpuid in ((6, 140, 1), (6, 140, 2), (6, 141, 1), (6, 151, 2), (6, 151, 5), (6, 154, 3), (6, 154, 4)):
+        return 0xFEDC0001
+    return 0xFED10001
+
+
+def power_thread(state, exit_event, cpuid):
     """Daemon main loop: periodically (re-)apply throttling MSRs."""
+    config, regs = state['config'], state['regs']
+    mchbar_base = read_mchbar_base(cpuid)
     try:
-        MCHBAR_BASE = int(check_output(('setpci', '-s', '0:0.0', '48.l')), 16)
-    except CalledProcessError:
-        warning('Please ensure that "setpci" is in path. This is typically provided by the "pciutils" package.')
-        warning('Trying to guess the MCHBAR address from the CPUID. This MIGHT NOT WORK!')
-        if cpuid in ((6, 140, 1), (6, 140, 2), (6, 141, 1), (6, 151, 2), (6, 151, 5), (6, 154, 3), (6, 154, 4)):
-            MCHBAR_BASE = 0xFEDC0001
-        else:
-            MCHBAR_BASE = 0xFED10001
-    try:
-        mchbar_mmio = MMIO(MCHBAR_BASE + 0x599F, 8)
+        mchbar_mmio = MMIO(mchbar_base + 0x599F, 8)
     except MMIOError:
         warning('Unable to open /dev/mem. TDP override might not work correctly.')
         warning('Try to disable Secure Boot and/or enable CONFIG_DEVMEM in kernel config.')
@@ -817,7 +870,8 @@ def power_thread(config, regs, exit_event, cpuid):
             config_write_time = get_config_write_time()
             if config_write_time and last_config_write_time != config_write_time:
                 last_config_write_time = config_write_time
-                config, regs = reload_config()
+                state['config'], state['regs'] = reload_config()
+                config, regs = state['config'], state['regs']
 
         # switch back to sysfs polling
         if power['method'] == 'polling':
@@ -1070,8 +1124,10 @@ def main():
     set_icc_max(config)
     set_hwp(config.getboolean('AC', 'HWP_Mode', fallback=None))
 
+    state = {'config': config, 'regs': regs}
+
     exit_event = Event()
-    thread = Thread(target=power_thread, args=(config, regs, exit_event, cpuid))
+    thread = Thread(target=power_thread, args=(state, exit_event, cpuid))
     thread.daemon = True
     thread.start()
 
@@ -1084,7 +1140,7 @@ def main():
         monitor_thread.start()
 
     try:
-        asyncio.run(run_dbus_loop(config))
+        asyncio.run(run_dbus_loop(state))
     except (KeyboardInterrupt, SystemExit):
         pass
     finally:
