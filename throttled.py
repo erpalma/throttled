@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import argparse
+import asyncio
 import configparser
 import glob
 import gzip
@@ -17,12 +18,15 @@ from subprocess import check_output, CalledProcessError
 from threading import Event, Thread
 from time import time
 
-import dbus
-from dbus.mainloop.glib import DBusGMainLoop
-from gi.repository import GLib
 from mmio import MMIO, MMIOError
 
 DEFAULT_SYSFS_POWER_PATH = '/sys/class/power_supply/AC*/online'
+UPOWER_SERVICE = 'org.freedesktop.UPower'
+UPOWER_PATH = '/org/freedesktop/UPower'
+LOGIN1_SERVICE = 'org.freedesktop.login1'
+LOGIN1_PATH = '/org/freedesktop/login1'
+LOGIN1_MANAGER_INTERFACE = 'org.freedesktop.login1.Manager'
+DBUS_PROPERTIES_INTERFACE = 'org.freedesktop.DBus.Properties'
 VOLTAGE_PLANES = {'CORE': 0, 'GPU': 1, 'CACHE': 2, 'UNCORE': 3, 'ANALOGIO': 4}
 CURRENT_PLANES = {'CORE': 0, 'GPU': 1, 'CACHE': 2}
 TRIP_TEMP_RANGE = [40, 97]
@@ -322,6 +326,34 @@ def set_msr_allow_writes():
             warning('Unable to set MSR allow_writes to on. You might experience warnings in kernel logs.')
 
 
+def get_dbus_next():
+    """Import dbus-next lazily so tests and --help do not need a live DBus stack."""
+    from dbus_next.aio import MessageBus
+    from dbus_next.constants import BusType
+
+    return MessageBus, BusType
+
+
+def unwrap_dbus_value(value):
+    return value.value if hasattr(value, 'value') else value
+
+
+async def get_upower_on_battery_async():
+    MessageBus, BusType = get_dbus_next()
+    bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
+    try:
+        introspection = await bus.introspect(UPOWER_SERVICE, UPOWER_PATH)
+        upower = bus.get_proxy_object(UPOWER_SERVICE, UPOWER_PATH, introspection)
+        properties = upower.get_interface(DBUS_PROPERTIES_INTERFACE)
+        return bool(unwrap_dbus_value(await properties.call_get(UPOWER_SERVICE, 'OnBattery')))
+    finally:
+        bus.disconnect()
+
+
+def get_upower_on_battery():
+    return asyncio.run(get_upower_on_battery_async())
+
+
 def is_on_battery(config):
     """Return True if the system is on battery power; falls back to UPower
     over D-Bus if the configured sysfs path is unreadable.
@@ -335,15 +367,64 @@ def is_on_battery(config):
     else:
         warning('No valid Sysfs_Power_Path found! Trying upower method')
     try:
-        bus = dbus.SystemBus()
-        proxy = bus.get_object('org.freedesktop.UPower', '/org/freedesktop/UPower')
-        iface = dbus.Interface(proxy, 'org.freedesktop.DBus.Properties')
-        return bool(iface.Get('org.freedesktop.UPower', 'OnBattery'))
-    except dbus.DBusException:
+        return get_upower_on_battery()
+    except Exception:
         pass
 
     warning('No valid power detection methods found. Assuming that the system is running on battery power.')
     return True
+
+
+def handle_sleep_prepare(sleeping, config):
+    if not sleeping:
+        undervolt(config)
+        set_icc_max(config)
+
+
+def handle_ac_properties_changed(if_name, changed, invalidated):
+    if "OnBattery" in changed:
+        power['method'] = 'dbus'
+        power['source'] = 'BATTERY' if bool(unwrap_dbus_value(changed['OnBattery'])) else 'AC'
+
+
+def should_listen_for_resume(config):
+    return any(
+        config.getfloat(key, plane, fallback=0) != 0 for plane in VOLTAGE_PLANES for key in UNDERVOLT_KEYS + ICCMAX_KEYS
+    )
+
+
+async def setup_dbus_signal_handlers(config):
+    MessageBus, BusType = get_dbus_next()
+    bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
+    context = {'bus': bus}
+    try:
+        upower_introspection = await bus.introspect(UPOWER_SERVICE, UPOWER_PATH)
+        upower = bus.get_proxy_object(UPOWER_SERVICE, UPOWER_PATH, upower_introspection)
+        upower_properties = upower.get_interface(DBUS_PROPERTIES_INTERFACE)
+        upower_properties.on_properties_changed(handle_ac_properties_changed)
+        context['upower'] = upower
+        context['upower_properties'] = upower_properties
+
+        if should_listen_for_resume(config):
+            login1_introspection = await bus.introspect(LOGIN1_SERVICE, LOGIN1_PATH)
+            login1 = bus.get_proxy_object(LOGIN1_SERVICE, LOGIN1_PATH, login1_introspection)
+            login1_manager = login1.get_interface(LOGIN1_MANAGER_INTERFACE)
+            login1_manager.on_prepare_for_sleep(lambda sleeping: handle_sleep_prepare(sleeping, config))
+            context['login1'] = login1
+            context['login1_manager'] = login1_manager
+
+        return context
+    except Exception:
+        bus.disconnect()
+        raise
+
+
+async def run_dbus_loop(config):
+    context = await setup_dbus_signal_handlers(config)
+    try:
+        await asyncio.Future()
+    finally:
+        context['bus'].disconnect()
 
 
 def get_cpu_platform_info():
@@ -971,9 +1052,6 @@ def main():
 
     test_msr_rw_capabilities()
 
-    DBusGMainLoop(set_as_default=True)
-    bus = dbus.SystemBus()
-
     log('[I] Loading config file.')
     config = load_config()
     power['source'] = 'BATTERY' if is_on_battery(config) else 'AC'
@@ -997,49 +1075,23 @@ def main():
     thread.daemon = True
     thread.start()
 
-    # handle dbus events for applying undervolt/IccMax on resume from sleep/hibernate
-    def handle_sleep_callback(sleeping):
-        if not sleeping:
-            undervolt(config)
-            set_icc_max(config)
-
-    def handle_ac_callback(if_name, changed, invalidated):
-        if "OnBattery" in changed:
-            power['method'] = 'dbus'
-            power['source'] = 'BATTERY' if bool(changed['OnBattery']) else 'AC'
-
-    # add dbus receiver only if undervolt/IccMax is enabled in config
-    if any(
-        config.getfloat(key, plane, fallback=0) != 0 for plane in VOLTAGE_PLANES for key in UNDERVOLT_KEYS + ICCMAX_KEYS
-    ):
-        bus.add_signal_receiver(
-            handle_sleep_callback, 'PrepareForSleep', 'org.freedesktop.login1.Manager', 'org.freedesktop.login1'
-        )
-    bus.add_signal_receiver(
-        handle_ac_callback,
-        signal_name="PropertiesChanged",
-        dbus_interface="org.freedesktop.DBus.Properties",
-        path="/org/freedesktop/UPower",
-    )
-
     log('[I] Starting main loop.')
 
+    monitor_thread = None
     if args.monitor is not None:
         monitor_thread = Thread(target=monitor, args=(exit_event, args.monitor))
         monitor_thread.daemon = True
         monitor_thread.start()
 
     try:
-        loop = GLib.MainLoop()
-        loop.run()
+        asyncio.run(run_dbus_loop(config))
     except (KeyboardInterrupt, SystemExit):
         pass
-
-    exit_event.set()
-    loop.quit()
-    thread.join(timeout=1)
-    if args.monitor is not None:
-        monitor_thread.join(timeout=0.1)
+    finally:
+        exit_event.set()
+        thread.join(timeout=1)
+        if monitor_thread is not None:
+            monitor_thread.join(timeout=0.1)
 
 
 if __name__ == '__main__':

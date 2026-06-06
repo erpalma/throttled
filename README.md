@@ -6,7 +6,7 @@ The CPU package power limit (PL1/2) is forced to a value of **44 W** (29 W on ba
 On systems where the EC doesn't reset the values (ex: ASUS Zenbook UX430UNR), the power limit can be altered by using the official intel_rapl driver (see [Static fix](#static-fix) for more information)
 
 ## Warning!
-The latest commit (30 Oct 2021) switched from the legacy name `lenovo_fix` for the tool/config/system to a more uniform `throttled`. The install script was updated, but please report back if anything breaks. 
+The 30 Oct 2021 update switched from the legacy name `lenovo_fix` for the tool/config/system to a more uniform `throttled`. The install script was updated, but please report back if anything breaks.
 
 ### Tested hardware
 Other users have confirmed that the tool is also working for these laptops:
@@ -30,7 +30,7 @@ The tool supports **undervolting** the CPU by configuring voltage offsets for CP
 The tool now supports overriding the **IccMax** by configuring the maximum allowed current for CPU, cache and GPU planes. The tool will re-apply IccMax on resume from standby and hibernate. You can now either use the `ICCMAX` key in config to set global values or the `ICCMAX.AC` and `ICCMAX.BATTERY` keys to selectively set current values for the two power profiles. **NOTE:** the values specified in the config file are the actual current limit of your system, so those are not a offset from the default values as for the undervolt. As such, you should first find your system default values with the `--monitor` command.
 
 ### HWP override (EXPERIMENTAL)
-I have found that under load my CPU was not always hitting max turbo frequency, in particular when using one/two cores only. For instance, when running [prime95](https://www.mersenne.org/download/) (1 core, test #1) my CPU is limited to about 3500 MHz over the theoretical 4000 MHz maximum. The reason is the value for the HWP energy performance [hints](http://manpages.ubuntu.com/manpages/artful/man8/x86_energy_perf_policy.8.html). By default TLP sets this value to `balance_performance` on AC in order to reduce the power consumption/heat in idle. By setting this value to `performance` I was able to reach 3900 MHz in the prime95 single core test, achieving a +400 MHz boost. Since this value forces the CPU to full speed even during idle, a new experimental feature allows to automatically set HWP to performance under load and revert it to balanced when idle. This feature can be enabled (in AC mode *only*) by setting to `True` the `HWP_Mode` parameter in the throttled config file : https://github.com/erpalma/throttled/blob/master/etc/throttled.conf#L41 .
+I have found that under load my CPU was not always hitting max turbo frequency, in particular when using one/two cores only. For instance, when running [prime95](https://www.mersenne.org/download/) (1 core, test #1) my CPU is limited to about 3500 MHz over the theoretical 4000 MHz maximum. The reason is the value for the HWP energy performance [hints](http://manpages.ubuntu.com/manpages/artful/man8/x86_energy_perf_policy.8.html). By default TLP sets this value to `balance_performance` on AC in order to reduce the power consumption/heat in idle. By setting this value to `performance` I was able to reach 3900 MHz in the prime95 single core test, achieving a +400 MHz boost. Since this value forces the CPU to full speed even during idle, a new experimental feature allows to automatically set HWP to performance under load and revert it to balanced when idle. This feature can be enabled (in AC mode *only*) by setting `HWP_Mode` to `True` in `etc/throttled.conf`.
 
 I have run **[Geekbench 4](https://browser.geekbench.com/v4/cpu/8656840)** and now I can get a score of 5391/17265! On `balance_performance` I can reach only 4672/16129, so **15% improvement** in single core and 7% in multicore, not bad ;)
 
@@ -38,7 +38,9 @@ I have run **[Geekbench 4](https://browser.geekbench.com/v4/cpu/8656840)** and n
 On a lot of modern CPUs from Intel one can configure the TDP up or down based on predefined profiles. This is what this option does. For a i7-8650U normal would be 15W, up profile is setting it to 25W and down to 10W. You can lookup the values of your CPU at the Intel product website.
 
 ## Requirements
-A stripped down version of the python module `python-periphery` is now built-in and it is used for accessing the MCHBAR register by memory mapped I/O. You also need `dbus` and `gobject` python bindings for listening to dbus signals on resume from sleep/hibernate.
+A stripped down version of the python module `python-periphery` is now built-in and it is used for accessing the MCHBAR register by memory mapped I/O. You also need `dbus-next` for listening to DBus signals on resume from sleep/hibernate and power-source changes.
+
+Older versions used `dbus-python` together with the `PyGObject`/GLib main loop to dispatch DBus notifications. The current implementation uses `dbus-next` with Python's `asyncio` event loop instead, so the Python GObject/GLib bindings are no longer required. A running system DBus service is still required for UPower and logind signals.
 
 ### Writing to MSR and PCI BAR
 Some time ago a feature called [Kernel Lockdown](https://lwn.net/Articles/706637/) was added to Linux. Kernel Lockdown automatically enables some security measures when Secure Boot is enabled, among them restricted access to MSR and PCI BAR via /dev/mem, which this tool requires. There are two ways to get around this: You can either disable Secure Boot in your firmware settings, or disable the Kernel Lockdown LSM.
@@ -59,11 +61,11 @@ As discovered by *DEvil0000* the Linux Thermal Monitor ([thermald](https://githu
 Note that on some platforms thermald seems to be required. E.g. Dell Latitude 7320 i7-1185G7, Linux 6.6.48, Void Linux musl, still runs into throttling issues unless `thermald --adaptive` is running. If you are running throttled but still seeing throttling issues, try testing with `thermald --adaptive` running as well.
 
 ### Update
-The tool is now running with Python3 by default (tested w/ 3.6) and a virtualenv is automatically created in `/opt/throttled`. Python2 should probably still work.
+The tool runs on Python 3.9 or newer and the install script automatically creates a virtualenv in `/opt/throttled`.
 
 ## Installation
 
-### Arch Linux [community package](https://www.archlinux.org/packages/community/x86_64/throttled/):
+### Arch Linux [package](https://archlinux.org/packages/extra/any/throttled/):
 ```
 pacman -S throttled
 sudo systemctl enable --now throttled.service
@@ -87,7 +89,7 @@ doas rc-service throttled start
 
 ### Debian/Ubuntu
 ```
-sudo apt install git build-essential python3-dev libdbus-glib-1-dev libgirepository1.0-dev libcairo2-dev python3-cairo-dev python3-venv python3-wheel
+sudo apt install git python3-venv python3-wheel
 git clone https://github.com/erpalma/throttled.git
 sudo ./throttled/install.sh
 ```
@@ -119,7 +121,7 @@ sudo systemctl enable --now throttled
 
 If you prefer to install from source, you can use the following commands.
 ```
-sudo dnf install python3-cairo-devel cairo-gobject-devel gobject-introspection-devel dbus-glib-devel python3-devel make libX11-devel
+sudo dnf install git python3-devel python3-wheel
 git clone https://github.com/erpalma/throttled.git
 sudo ./throttled/install.sh
 ```
@@ -141,9 +143,9 @@ sudo systemctl enable --now throttled
 ```
 
 ### openSUSE
-User *brycecordill* reported that the following dependencies are required for installing in openSUSE, tested on openSUSE 15.0 Leap.
+For source installation, install the Python tooling first:
 ```
-sudo zypper install gcc make python3-devel dbus-1-glib-devel python3-cairo-devel cairo-devel python3-gobject-cairo gobject-introspection-devel
+sudo zypper install git python3-devel python3-pip
 git clone https://github.com/erpalma/throttled.git
 sudo ./throttled/install.sh
 ```
@@ -162,7 +164,7 @@ systemctl enable --now throttled.service
 ### Solus
 ```
 sudo eopkg it -c system.devel
-sudo eopkg it git python3-devel dbus-glib-devel python3-cairo-devel libcairo-devel python3-gobject-devel
+sudo eopkg it git python3-devel
 git clone https://github.com/erpalma/throttled.git
 sudo ./throttled/install.sh
 ```
@@ -172,7 +174,7 @@ sudo ./throttled/install.sh
 The installation itself will create a runit service as throttled, enable it and start it. Before installation, make sure dbus is running `sv up dbus`.
 
 ```
-sudo xbps-install -Sy gcc git python3-devel dbus-glib-devel libgirepository-devel cairo-devel python3-wheel pkg-config make
+sudo xbps-install -Sy git python3-devel python3-wheel
 
 git clone https://github.com/erpalma/throttled.git
 
@@ -217,7 +219,7 @@ OpenRC: sudo rc-service throttled restart
 ```
 
 ## Configuration
-The configuration has moved to `/etc/throttled.conf`. Makefile does not overwrite your previous config file, so you need to manually check for differences in config file structure when updating the tool. If you want to overwrite the config with new defaults just issue `sudo cp etc/throttled.conf /etc`. There exist two profiles `AC` and `BATTERY` and the tool can be totally disabled by setting `Enabled: False` in the `GENERAL` section. Undervolt is applied if any voltage plane in the config file (section UNDERVOLT) was set. Notice that the offset is in *mV* and only undervolting (*i.e.* negative values) is supported.
+The configuration has moved to `/etc/throttled.conf`. The install script does not overwrite your previous config file, so you need to manually check for differences in config file structure when updating the tool. If you want to overwrite the config with new defaults just issue `sudo cp etc/throttled.conf /etc`. There exist two profiles `AC` and `BATTERY` and the tool can be totally disabled by setting `Enabled: False` in the `GENERAL` section. Undervolt is applied if any voltage plane in the config file (section UNDERVOLT) was set. Notice that the offset is in *mV* and only undervolting (*i.e.* negative values) is supported.
 All fields accept floating point values as well as integers.
 
 My T480s with i7-8550u is stable with:
@@ -234,7 +236,7 @@ UNCORE: -85
 # Analog I/O voltage offset (mV)
 ANALOGIO: 0
 ```
-**IMPORTANT:** Please notice that *my* system is stable with these values. Your notebook might crash even with slight undervolting! You should test your system and slowly incresing undervolt to find the maximum stable value for your CPU. You can check [this](https://www.notebookcheck.net/Intel-Extreme-Tuning-Utility-XTU-Undervolting-Guide.272120.0.html) tutorial if you don't know where to start.
+**IMPORTANT:** Please notice that *my* system is stable with these values. Your notebook might crash even with slight undervolting! You should test your system and slowly increasing undervolt to find the maximum stable value for your CPU. You can check [this](https://www.notebookcheck.net/Intel-Extreme-Tuning-Utility-XTU-Undervolting-Guide.272120.0.html) tutorial if you don't know where to start.
 
 ## Monitoring
 With the flag `--monitor` the tool *constantly* monitors the throttling status, indicating the cause among thermal limit, power limit, current limit or cross-origin. The last cause is often related to an external event (e.g. by the GPU). The update rate can be adjusted and defaults to 1 second. Example output:
@@ -270,7 +272,7 @@ echo 28000000 | sudo tee /sys/devices/virtual/powercap/intel-rapl-mmio/intel-rap
 echo 44000000 | sudo tee /sys/devices/virtual/powercap/intel-rapl-mmio/intel-rapl-mmio:0/constraint_1_power_limit_uw # 44 watt
 echo 2440 | sudo tee /sys/devices/virtual/powercap/intel-rapl-mmio/intel-rapl-mmio:0/constraint_1_time_window_us # 0.00244 sec
 ```
-If you want to change the values automatic on boot you can use [systemd-tmpfiles](https://www.freedesktop.org/software/systemd/man/tmpfiles.d.html):
+If you want to change the values automatically on boot you can use [systemd-tmpfiles](https://www.freedesktop.org/software/systemd/man/tmpfiles.d.html):
 ```
 # /etc/tmpfiles.d/power_limit.conf
 # MSR
@@ -292,7 +294,7 @@ w /sys/devices/virtual/powercap/intel-rapl-mmio/intel-rapl-mmio:0/constraint_1_t
 ```
 
 ## Debug
-You can enable the `--debug` option to read back written values and check if the tool is working properly. At the statup it will also show the CPUs platform info which contains information about multiplier values and features present for this CPU. Additionally the tool will print the thermal status per core which is handy when it comes to figuring out the reason for CPU throttle. Status fields stands for the current throttle reason or condition and log shows if this was a throttle reason since the last interval.
+You can enable the `--debug` option to read back written values and check if the tool is working properly. At startup it will also show the CPUs platform info which contains information about multiplier values and features present for this CPU. Additionally the tool will print the thermal status per core which is handy when it comes to figuring out the reason for CPU throttle. Status fields stands for the current throttle reason or condition and log shows if this was a throttle reason since the last interval.
 This is an example output:
 ```
 ./throttled.py --debug
@@ -347,7 +349,7 @@ Autoreload = True
 ## A word about manufacturer provided tooling
 Tools provided by your notebook manufacturer like [Dell Power Manager](https://www.dell.com/support/contents/us/en/04/article/product-support/self-support-knowledgebase/software-and-downloads/dell-power-manager) tend to persist their settings to the system board. If you ever had it running under Windows and activated a cool/quiet/silent/saving profile, this setting will still be active when running linux, throttling your system.
 
-> On my Dell Latitude 5591, not even a BIOS reset to manufacturar default killed the active `Quiet` profile
+> On my Dell Latitude 5591, not even a BIOS reset to manufacturer default killed the active `Quiet` profile
 
 ## Disclaimer
 This script overrides the default values set by Lenovo. I'm using it without any problem, but it is still experimental so use it at your own risk.
