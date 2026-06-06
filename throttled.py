@@ -99,6 +99,7 @@ supported_cpus = {
     (6, 30, 5): 'Lynnfield_CPUID',
     (6, 31, 1): 'Auburndale',
     (6, 37, 2): 'Clarkdale',
+    (6, 37, 5): 'Arrandale',
     (6, 38, 1): 'TunnelCreek',
     (6, 39, 2): 'Medfield',
     (6, 42, 2): 'SandyBridge',
@@ -172,10 +173,13 @@ supported_cpus = {
     (6, 166, 0): 'CometLake',
     (6, 167, 1): 'RocketLake',
     (6, 170, 4): 'MeteorLake',
+    (6, 181, 0): 'ArrowLake-U',
     (6, 183, 1): 'RaptorLake-HX',
     (6, 186, 2): 'RaptorLake',
     (6, 186, 3): 'RaptorLake-U',
     (6, 189, 1): 'LunarLake',
+    (6, 190, 0): 'AlderLake-N',
+    (6, 198, 2): 'ArrowLake-HX',
 }
 
 TESTMSR = False
