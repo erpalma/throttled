@@ -110,6 +110,15 @@ In order to check if the service is well started, you could run:
 systemctl status throttled
 ```
 
+### Local Debian package
+You can build a local `.deb` package without creating a virtualenv or using `pip` during installation:
+```
+./scripts/build-deb.sh
+sudo apt install ./dist/throttled_*.deb
+systemctl status throttled.service
+```
+The package installs the daemon under `/usr/lib/throttled`, the config file at `/etc/throttled.conf`, and a systemd unit at `/lib/systemd/system/throttled.service`. During installation on a running systemd host, the package reloads systemd, enables `throttled.service`, and restarts it. In chroots or containers without active systemd, the package skips service management.
+
 ### Fedora
 A [copr repository](https://copr.fedorainfracloud.org/coprs/abn/throttled/) is available and can be used as detailed below. You can find the configuration installed at `/etc/throttled.conf`. The issue tracker for this packaging is available [here](https://github.com/abn/throttled-rpm/issues).
 ```
