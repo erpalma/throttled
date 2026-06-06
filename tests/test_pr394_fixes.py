@@ -101,6 +101,19 @@ class PR394FixTests(unittest.TestCase):
         self.assertEqual(regs['AC']['MSR_TEMPERATURE_TARGET'], 3 << 24)
         self.assertEqual(regs['BATTERY']['MSR_TEMPERATURE_TARGET'], 3 << 24)
 
+    def test_power_unit_is_not_read_when_package_power_limits_are_disabled(self):
+        throttled = load_throttled()
+
+        with mock.patch.object(throttled, 'get_power_unit', side_effect=AssertionError('unused')):
+            with mock.patch.object(throttled, 'log'):
+                with mock.patch.object(throttled, 'warning'):
+                    regs = throttled.calc_reg_values(
+                        {'feature_programmable_temperature_target': 0, 'feature_programmable_tdp_limit': 0},
+                        make_config(),
+                    )
+
+        self.assertEqual(dict(regs), {})
+
     def test_mchbar_reader_rejects_invalid_setpci_values_before_guessing(self):
         throttled = load_throttled()
 

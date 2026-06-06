@@ -714,14 +714,13 @@ def calc_reg_values(platform_info, config):
             else:
                 log(f'[I] {power_source:s} trip temperature is disabled in config.')
 
-        power_unit = get_power_unit()
-
         PL1_Tdp_W = config.getfloat(power_source, 'PL1_Tdp_W', fallback=None)
         PL1_Duration_s = config.getfloat(power_source, 'PL1_Duration_s', fallback=None)
         PL2_Tdp_W = config.getfloat(power_source, 'PL2_Tdp_W', fallback=None)
         PL2_Duration_s = config.getfloat(power_source, 'PL2_Duration_s', fallback=None)
 
         if (PL1_Tdp_W, PL1_Duration_s, PL2_Tdp_W, PL2_Duration_s).count(None) < 4:
+            power_unit = get_power_unit()
             cur_pkg_power_limits = get_cur_pkg_power_limits()
             if PL1_Tdp_W is None:
                 PL1 = cur_pkg_power_limits['PL1']
@@ -1070,11 +1069,12 @@ def monitor(exit_event, wait):
         exit_event.wait(wait)
 
 
-def main():
-    """Daemon entrypoint: parse args, validate platform, start power thread."""
-    global args
-
-    parser = argparse.ArgumentParser()
+def build_arg_parser():
+    """Create the command-line parser, disabling argparse's own color output when available."""
+    try:
+        parser = argparse.ArgumentParser(color=False)
+    except TypeError:
+        parser = argparse.ArgumentParser()
     exclusive_group = parser.add_mutually_exclusive_group()
     exclusive_group.add_argument('--debug', action='store_true', help='add some debug info and additional checks')
     exclusive_group.add_argument(
@@ -1088,7 +1088,14 @@ def main():
     parser.add_argument('--config', default='/etc/throttled.conf', help='override default config file path')
     parser.add_argument('--force', action='store_true', help='bypass compatibility checks (EXPERTS only)')
     parser.add_argument('--log', metavar='/path/to/file', help='log to file instead of stdout')
-    args = parser.parse_args()
+    return parser
+
+
+def main():
+    """Daemon entrypoint: parse args, validate platform, start power thread."""
+    global args
+
+    args = build_arg_parser().parse_args()
 
     if args.log:
         try:
