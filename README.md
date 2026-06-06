@@ -1,4 +1,8 @@
 # Fix Intel CPU Throttling on Linux
+
+[![Pre-release v0.12](https://img.shields.io/badge/pre--release-v0.12-orange)](https://github.com/erpalma/throttled/releases/tag/v0.12)
+[Download the Debian package](https://github.com/erpalma/throttled/releases/download/v0.12/throttled_0.12_all.deb)
+
 This tool was originally developed to fix Linux CPU throttling issues affecting Lenovo T480 / T480s / X1C6 as described [here](https://www.reddit.com/r/thinkpad/comments/870u0a/t480s_linux_throttling_bug/).
 
 The CPU package power limit (PL1/2) is forced to a value of **44 W** (29 W on battery) and the temperature trip point to **95 'C** (85 'C on battery) by overriding default values in MSR and MCHBAR every 5 seconds (30 on battery) to block the Embedded Controller from resetting these values to default.
