@@ -18,7 +18,7 @@ Build a Debian package for throttled.
 
 Options:
   --output-dir DIR      Directory where the .deb is written (default: dist)
-  --version VERSION    Debian package version (default: 0.11+git.<short-sha>)
+  --version VERSION    Debian package version (default: 0.12+git.<short-sha>)
   --maintainer VALUE   Maintainer field for DEBIAN/control
   -h, --help           Show this help
 EOF
@@ -63,9 +63,9 @@ ROOT_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 
 if [ -z "$VERSION" ]; then
     if GIT_SHA=$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null); then
-        VERSION="0.11+git.$GIT_SHA"
+        VERSION="0.12+git.$GIT_SHA"
     else
-        VERSION="0.11+local"
+        VERSION="0.12+local"
     fi
 fi
 
