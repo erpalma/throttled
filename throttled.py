@@ -29,6 +29,7 @@ DBUS_PROPERTIES_INTERFACE = 'org.freedesktop.DBus.Properties'
 VOLTAGE_PLANES = {'CORE': 0, 'GPU': 1, 'CACHE': 2, 'UNCORE': 3, 'ANALOGIO': 4}
 CURRENT_PLANES = {'CORE': 0, 'GPU': 1, 'CACHE': 2}
 TRIP_TEMP_RANGE = [40, 97]
+POWER_PROFILES = ('AC', 'BATTERY')
 UNDERVOLT_KEYS = ('UNDERVOLT', 'UNDERVOLT.AC', 'UNDERVOLT.BATTERY')
 ICCMAX_KEYS = ('ICCMAX', 'ICCMAX.AC', 'ICCMAX.BATTERY')
 power = {'source': None, 'method': 'polling'}
@@ -583,6 +584,25 @@ def calc_icc_max_amp(msr_value):
     return (msr_value & 0x3FF) / 4.0
 
 
+def get_configured_power_profiles(config):
+    """Return the AC/BATTERY power profiles present in the config file."""
+    return [profile for profile in POWER_PROFILES if profile in config]
+
+
+def get_update_rate(config, power_source):
+    """Return the update rate for power_source, or any configured profile."""
+    update_rate = config.getfloat(power_source, 'Update_Rate_s', fallback=None)
+    if update_rate is not None:
+        return update_rate
+
+    for fallback_power_source in get_configured_power_profiles(config):
+        update_rate = config.getfloat(fallback_power_source, 'Update_Rate_s', fallback=None)
+        if update_rate is not None:
+            return update_rate
+
+    fatal('At least one configured power profile must define "Update_Rate_s".')
+
+
 def get_icc_max(plane=None, convert=False):
     """Read the IccMax setting from one or all current planes."""
     planes = [plane] if plane in CURRENT_PLANES else CURRENT_PLANES
@@ -623,14 +643,18 @@ def load_config():
     config = configparser.ConfigParser()
     config.read(args.config)
 
+    power_profiles = get_configured_power_profiles(config)
+    if not power_profiles:
+        fatal('At least one power profile ([AC] or [BATTERY]) is required.')
+
     # config values sanity check
-    for power_source in ('AC', 'BATTERY'):
+    for power_source in power_profiles:
         for option in ('Update_Rate_s', 'PL1_Tdp_W', 'PL1_Duration_s', 'PL2_Tdp_W', 'PL2_Duration_S'):
             value = config.getfloat(power_source, option, fallback=None)
             if value is not None:
                 config.set(power_source, option, str(max(0.001, value)))
             elif option == 'Update_Rate_s':
-                fatal('The mandatory "Update_Rate_s" parameter is missing.')
+                fatal(f'The mandatory "Update_Rate_s" parameter is missing in the [{power_source:s}] profile.')
 
         trip_temp = config.getfloat(power_source, 'Trip_Temp_C', fallback=None)
         if trip_temp is not None:
@@ -694,7 +718,7 @@ def load_config():
 def calc_reg_values(platform_info, config):
     """Compute the MSR values to apply for each power source from the config."""
     regs = defaultdict(dict)
-    for power_source in ('AC', 'BATTERY'):
+    for power_source in get_configured_power_profiles(config):
         if platform_info['feature_programmable_temperature_target'] != 1:
             warning("Setting temperature target is not supported by this CPU")
         else:
@@ -921,7 +945,7 @@ def power_thread(state, exit_event, cpuid):
         if disable_bdprochot:
             set_disable_bdprochot()
 
-        wait_t = config.getfloat(power['source'], 'Update_Rate_s')
+        wait_t = get_update_rate(config, power['source'])
         enable_hwp_mode = config.getboolean('AC', 'HWP_Mode', fallback=None)
         # set HWP less frequently. Just to be safe since (e.g.) TLP might reset this value
         if enable_hwp_mode and next_hwp_write <= time() and power['source'] == 'AC':
