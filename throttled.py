@@ -532,7 +532,8 @@ def calc_undervolt_msr(plane, offset):
 def calc_undervolt_mv(msr_value):
     """Return the offset voltage (in mV) from the given raw MSR 150h value."""
     offset = (msr_value & 0xFFE00000) >> 21
-    offset = offset if offset <= 0x400 else -(0x800 - offset)
+    # 11-bit two's complement: values >= 0x400 are negative
+    offset = offset if offset < 0x400 else -(0x800 - offset)
     return int(round(offset / 1.024))
 
 
@@ -573,7 +574,8 @@ def calc_icc_max_msr(plane, current):
     """Return the value to be written in the MSR 150h for setting the given
     IccMax (in A) to the given current plane.
     """
-    assert 0 < current <= 0x3FF
+    # the MSR field is 10 bits of 1/4 A steps: max 0x3FF / 4 = 255.75 A
+    assert 0 < current <= 0x3FF / 4
     assert plane in CURRENT_PLANES
     current = int(round(current * 4))
     return 0x8000001700000000 | (CURRENT_PLANES[plane] << 40) | current
@@ -738,6 +740,14 @@ def calc_reg_values(platform_info, config):
                     )
                     Trip_Temp_C = valid_trip_temp
                 trip_offset = int(round(critical_temp - Trip_Temp_C))
+                if trip_offset > 63:
+                    # the offset field is 6 bits wide: a larger value would
+                    # spill into adjacent bits and corrupt the register
+                    log(
+                        f'[!] Overriding "Trip_Temp_C" in "{power_source:s}": offset {trip_offset:d} '
+                        f'exceeds the 6-bit MSR field, clamping to {critical_temp - 63:d} C'
+                    )
+                    trip_offset = 63
                 regs[power_source]['MSR_TEMPERATURE_TARGET'] = trip_offset << 24
             else:
                 log(f'[I] {power_source:s} trip temperature is disabled in config.')
