@@ -418,7 +418,10 @@ def handle_ac_properties_changed(if_name, changed, invalidated):
 
 def should_listen_for_resume(config):
     return any(
-        config.getfloat(key, plane, fallback=0) != 0 for plane in VOLTAGE_PLANES for key in UNDERVOLT_KEYS + ICCMAX_KEYS
+        config.getfloat(key, plane, fallback=0) != 0
+        for keys, planes in ((UNDERVOLT_KEYS, VOLTAGE_PLANES), (ICCMAX_KEYS, CURRENT_PLANES))
+        for key in keys
+        for plane in planes
     )
 
 
@@ -550,9 +553,10 @@ def get_undervolt(plane=None, convert=False):
     return out
 
 
-def undervolt(config):
+def undervolt(config, source=None):
     """Apply the undervolt offsets from the config to all voltage planes."""
-    section = f"UNDERVOLT.{power['source']}"
+    source = source or power['source']
+    section = f'UNDERVOLT.{source}'
     if (section not in config and 'UNDERVOLT' not in config) or 'UNDERVOLT' in UNSUPPORTED_FEATURES:
         return
     for plane in VOLTAGE_PLANES:
@@ -615,9 +619,10 @@ def get_icc_max(plane=None, convert=False):
     return out
 
 
-def set_icc_max(config):
+def set_icc_max(config, source=None):
     """Apply the IccMax limits from the config to all current planes."""
-    section = f"ICCMAX.{power['source']}"
+    source = source or power['source']
+    section = f'ICCMAX.{source}'
     for plane in CURRENT_PLANES:
         try:
             write_current_amp = config.getfloat(
@@ -881,6 +886,7 @@ def power_thread(state, exit_event, cpuid):
         mchbar_mmio = None
 
     next_hwp_write = 0
+    applied_source = power['source']
     last_config_write_time = (
         get_config_write_time() if config.getboolean('GENERAL', 'Autoreload', fallback=False) else None
     )
@@ -904,9 +910,26 @@ def power_thread(state, exit_event, cpuid):
         if power['method'] == 'polling':
             power['source'] = 'BATTERY' if is_on_battery(config) else 'AC'
 
+        # snapshot the power source once per iteration: the D-Bus callback can
+        # flip it concurrently and every write below must agree on one profile
+        power_source = power['source']
+
+        # re-apply the one-shot per-profile settings when the power source flips
+        if power_source != applied_source:
+            log(f'[I] Power source changed: {applied_source:s} -> {power_source:s}')
+            undervolt(config, source=power_source)
+            set_icc_max(config, source=power_source)
+            if config.getboolean('AC', 'HWP_Mode', fallback=False):
+                if power_source == 'AC':
+                    next_hwp_write = 0
+                else:
+                    # restore the default energy/performance preference on battery
+                    set_hwp(False)
+            applied_source = power_source
+
         # set temperature trip point
-        if 'MSR_TEMPERATURE_TARGET' in regs[power['source']]:
-            write_value = regs[power['source']]['MSR_TEMPERATURE_TARGET']
+        if 'MSR_TEMPERATURE_TARGET' in regs[power_source]:
+            write_value = regs[power_source]['MSR_TEMPERATURE_TARGET']
             writemsr('MSR_TEMPERATURE_TARGET', write_value)
             if args.debug:
                 read_value = readmsr('MSR_TEMPERATURE_TARGET', 24, 29, flatten=True)
@@ -914,8 +937,8 @@ def power_thread(state, exit_event, cpuid):
                 log(f'[D] TEMPERATURE_TARGET - write {write_value >> 24:#x} - read {read_value:#x} - match {match}')
 
         # set cTDP
-        if 'MSR_CONFIG_TDP_CONTROL' in regs[power['source']]:
-            write_value = regs[power['source']]['MSR_CONFIG_TDP_CONTROL']
+        if 'MSR_CONFIG_TDP_CONTROL' in regs[power_source]:
+            write_value = regs[power_source]['MSR_CONFIG_TDP_CONTROL']
             writemsr('MSR_CONFIG_TDP_CONTROL', write_value)
             if args.debug:
                 read_value = readmsr('MSR_CONFIG_TDP_CONTROL', 0, 1, flatten=True)
@@ -923,8 +946,8 @@ def power_thread(state, exit_event, cpuid):
                 log(f'[D] CONFIG_TDP_CONTROL - write {write_value:#x} - read {read_value:#x} - match {match}')
 
         # set PL1/2 on MSR
-        if 'MSR_PKG_POWER_LIMIT' in regs[power['source']]:
-            write_value = regs[power['source']]['MSR_PKG_POWER_LIMIT']
+        if 'MSR_PKG_POWER_LIMIT' in regs[power_source]:
+            write_value = regs[power_source]['MSR_PKG_POWER_LIMIT']
             writemsr('MSR_PKG_POWER_LIMIT', write_value)
             if args.debug:
                 read_value = readmsr('MSR_PKG_POWER_LIMIT', 0, 55, flatten=True)
@@ -941,14 +964,14 @@ def power_thread(state, exit_event, cpuid):
                     )
 
         # Disable BDPROCHOT
-        disable_bdprochot = config.getboolean(power['source'], 'Disable_BDPROCHOT', fallback=None)
+        disable_bdprochot = config.getboolean(power_source, 'Disable_BDPROCHOT', fallback=None)
         if disable_bdprochot:
             set_disable_bdprochot()
 
-        wait_t = get_update_rate(config, power['source'])
+        wait_t = get_update_rate(config, power_source)
         enable_hwp_mode = config.getboolean('AC', 'HWP_Mode', fallback=None)
         # set HWP less frequently. Just to be safe since (e.g.) TLP might reset this value
-        if enable_hwp_mode and next_hwp_write <= time() and power['source'] == 'AC':
+        if enable_hwp_mode and next_hwp_write <= time() and power_source == 'AC':
             set_hwp(enable_hwp_mode)
             next_hwp_write = time() + HWP_INTERVAL
 
