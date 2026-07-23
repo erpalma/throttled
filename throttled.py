@@ -13,7 +13,7 @@ from collections import defaultdict
 from datetime import datetime
 from errno import EACCES, EIO, EPERM
 from platform import uname
-from subprocess import check_output, CalledProcessError
+from subprocess import check_output, CalledProcessError, PIPE
 from threading import Event, Thread
 from time import time
 
@@ -277,8 +277,9 @@ def writemsr(msr, val):
             raise e
         if e.errno == EPERM or e.errno == EACCES:
             fatal(
-                f'Unable to write to MSR {msr} ({MSR_DICT[msr]:x}). Try to disable Secure Boot '
-                'and check if your kernel does not restrict access to MSR.'
+                f'Unable to write to MSR {msr} ({MSR_DICT[msr]:x}). Check that the msr kernel module '
+                'is loaded with allow_writes=on and that kernel lockdown is disabled (many kernels '
+                'enable lockdown automatically when Secure Boot is on).'
             )
         elif e.errno == EIO:
             fatal(f'Unable to write to MSR {msr} ({MSR_DICT[msr]:x}). Unknown error.')
@@ -321,7 +322,10 @@ def readmsr(msr, from_bit=0, to_bit=63, cpu=None, flatten=False):
         if TESTMSR:
             raise e
         if e.errno == EPERM or e.errno == EACCES:
-            fatal(f'Unable to read from MSR {msr} ({MSR_DICT[msr]:x}). Try to disable Secure Boot.')
+            fatal(
+                f'Unable to read from MSR {msr} ({MSR_DICT[msr]:x}). Check that the msr kernel module '
+                'is loaded and not restricted by kernel lockdown.'
+            )
         elif e.errno == EIO:
             fatal(f'Unable to read to MSR {msr} ({MSR_DICT[msr]:x}). Unknown error.')
         else:
@@ -623,6 +627,10 @@ def set_icc_max(config):
             write_current_amp = config.getfloat(
                 section, plane, fallback=config.getfloat('ICCMAX', plane, fallback=-1.0)
             )
+            if write_current_amp <= 0 and any(
+                config.getfloat(key, plane, fallback=-1.0) > 0 for key in ICCMAX_KEYS
+            ):
+                warning(f'IccMax {plane:s} is not configured for the {power["source"]:s} profile: leaving it untouched.')
             if write_current_amp > 0:
                 write_value = calc_icc_max_msr(plane, write_current_amp)
                 writemsr('MSR_OC_MAILBOX', write_value)
@@ -669,7 +677,7 @@ def load_config():
     for key in UNDERVOLT_KEYS:
         for plane in VOLTAGE_PLANES:
             if key in config:
-                value = config.getfloat(key, plane)
+                value = config.getfloat(key, plane, fallback=0.0)
                 valid_value = min(0, value)
                 if value != valid_value:
                     config.set(key, plane, str(valid_value))
@@ -701,7 +709,8 @@ def load_config():
             if key in config:
                 try:
                     value = config.getfloat(key, plane)
-                    if value <= 0 or value >= 0x3FF:
+                    # the MSR field holds 10 bits of 1/4 A steps: max 255.75 A
+                    if value <= 0 or value > 0x3FF / 4:
                         raise ValueError
                     iccmax_enabled = True
                 except ValueError:
@@ -848,8 +857,16 @@ def _read_mchbar_dword(method=None):
     if method:
         cmd[1:1] = ['-A', method]
     try:
-        return int(check_output(cmd), 16)
-    except (CalledProcessError, FileNotFoundError, ValueError):
+        # capture stderr: a probe method is allowed to fail (e.g. the ECAM
+        # region is not mappable under STRICT_DEVMEM) and its complaint must
+        # not leak to the journal; read_mchbar_base() warns if all methods fail
+        return int(check_output(cmd, stderr=PIPE), 16)
+    except CalledProcessError as e:
+        if args.debug:
+            err = e.stderr.decode(errors='replace').strip()
+            log(f'[D] MCHBAR - setpci {method or "default"} probe failed: {err}')
+        return None
+    except (FileNotFoundError, ValueError):
         return None
 
 
@@ -877,7 +894,7 @@ def power_thread(state, exit_event, cpuid):
         mchbar_mmio = MMIO(mchbar_base + 0x599F, 8)
     except MMIOError:
         warning('Unable to open /dev/mem. TDP override might not work correctly.')
-        warning('Try to disable Secure Boot and/or enable CONFIG_DEVMEM in kernel config.')
+        warning('Check CONFIG_DEVMEM=y and that kernel lockdown is disabled (CONFIG_IO_STRICT_DEVMEM can also block this region).')
         mchbar_mmio = None
 
     next_hwp_write = 0
@@ -959,6 +976,13 @@ def check_kernel():
     """Verify we run as root and that the kernel exposes MSR/devmem."""
     if os.geteuid() != 0:
         fatal('No root no party. Try again with sudo.')
+
+    try:
+        with open('/sys/kernel/security/lockdown') as f:
+            if '[none]' not in f.read():
+                warning('Kernel lockdown is active: MSR and /dev/mem writes will be blocked.')
+    except OSError:
+        pass
 
     kernel_config = None
     try:
@@ -1048,6 +1072,8 @@ def monitor(exit_event, wait):
     """Live-display throttling causes and per-domain power until exit_event is set."""
     wait = max(0.1, wait)
     rapl_power_unit = 0.5 ** readmsr('MSR_RAPL_POWER_UNIT', from_bit=8, to_bit=12, cpu=0)
+    # the RAPL energy counters are 32 bits wide and wrap every few minutes
+    rapl_counter_range = 2**32 * rapl_power_unit
     power_plane_msr = {
         'Package': 'MSR_INTEL_PKG_ENERGY_STATUS',
         'Graphics': 'MSR_PP1_ENERGY_STATUS',
@@ -1079,10 +1105,9 @@ def monitor(exit_event, wait):
         for power_plane in ('Package', 'Graphics', 'DRAM'):
             energy_j = readmsr(power_plane_msr[power_plane], cpu=0) * rapl_power_unit
             now = time()
-            prev_energy[power_plane], energy_w = (
-                (energy_j, now),
-                (energy_j - prev_energy[power_plane][0]) / (now - prev_energy[power_plane][1]),
-            )
+            prev_j, prev_t = prev_energy[power_plane]
+            energy_w = ((energy_j - prev_j) % rapl_counter_range) / (now - prev_t)
+            prev_energy[power_plane] = (energy_j, now)
             stats2[power_plane] = f'{energy_w:.1f} W'
             total += energy_w
 
@@ -1151,7 +1176,7 @@ def main():
             log(f'[D] cpu platform info: {key.replace("_", " ")} = {value}')
     regs = calc_reg_values(platform_info, config)
 
-    if not config.getboolean('GENERAL', 'Enabled'):
+    if not config.getboolean('GENERAL', 'Enabled', fallback=False):
         log('[I] Throttled is disabled in config file... Quitting. :(')
         return
 
