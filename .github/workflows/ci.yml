@@ -19,8 +19,8 @@ jobs:
           - "3.12"
           - "3.14"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install test and build dependencies
@@ -37,7 +37,7 @@ jobs:
           /tmp/throttled-wheel/bin/python -m pip install --no-deps dist/*.whl
           /tmp/throttled-wheel/bin/throttled --version
           /tmp/throttled-wheel/bin/throttled --help
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: matrix.python-version == '3.14'
         with:
           name: python-distributions
@@ -51,8 +51,8 @@ jobs:
     env:
       NFPM_VERSION: v2.47.0
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version: stable
       - name: Install package inspection tools
@@ -90,7 +90,7 @@ jobs:
           ! grep -q 'etc/init.d/throttled' /tmp/deb-files
           ! grep -q 'etc/init.d/throttled' /tmp/rpm-files
           ! grep -q 'systemd/system/throttled.service' /tmp/apk-files
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: native-packages
           path: |
