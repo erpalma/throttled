@@ -94,6 +94,8 @@ After=multi-user.target
 Type=simple
 ExecStart=/usr/bin/python3 /usr/lib/throttled/throttled.py --config /etc/throttled.conf
 Environment=PYTHONUNBUFFERED=1
+Restart=on-failure
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target

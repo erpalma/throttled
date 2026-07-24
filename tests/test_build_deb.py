@@ -56,6 +56,7 @@ class BuildDebTests(unittest.TestCase):
             info = subprocess.run(['dpkg-deb', '--info', str(deb)], text=True, capture_output=True, check=True)
             contents = subprocess.run(['dpkg-deb', '--contents', str(deb)], text=True, capture_output=True, check=True)
             control_tar = subprocess.run(['dpkg-deb', '--ctrl-tarfile', str(deb)], capture_output=True, check=True)
+            data_tar = subprocess.run(['dpkg-deb', '--fsys-tarfile', str(deb)], capture_output=True, check=True)
 
             self.assertIn('Package: throttled', info.stdout)
             self.assertIn('Version: 0.12.1+test', info.stdout)
@@ -73,6 +74,8 @@ class BuildDebTests(unittest.TestCase):
                 postinst = archive.extractfile('./postinst').read().decode()
                 prerm = archive.extractfile('./prerm').read().decode()
                 postrm = archive.extractfile('./postrm').read().decode()
+            with tarfile.open(fileobj=io.BytesIO(data_tar.stdout), mode='r:*') as archive:
+                service = archive.extractfile('./lib/systemd/system/throttled.service').read().decode()
 
             self.assertIn('systemctl daemon-reload', postinst)
             self.assertIn('systemctl enable throttled.service', postinst)
@@ -80,6 +83,8 @@ class BuildDebTests(unittest.TestCase):
             self.assertIn('systemctl stop throttled.service', prerm)
             self.assertIn('systemctl disable throttled.service', prerm)
             self.assertIn('systemctl daemon-reload', postrm)
+            self.assertIn('Restart=on-failure', service)
+            self.assertIn('RestartSec=5', service)
 
     def test_script_is_executable(self):
         self.assertTrue(os.access(SCRIPT, os.X_OK))

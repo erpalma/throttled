@@ -9,12 +9,13 @@ import re
 import struct
 import subprocess
 import sys
+import traceback
 from collections import defaultdict
 from datetime import datetime
 from errno import EACCES, EIO, EPERM
 from platform import uname
 from subprocess import check_output, CalledProcessError, PIPE
-from threading import Event, Thread
+from threading import Event, Thread, current_thread, main_thread
 from time import time
 
 from mmio import MMIO, MMIOError
@@ -222,6 +223,11 @@ def log(msg, oneshot=False, end='\n'):
 def fatal(msg, code=1, end='\n'):
     outfile = args.log if args.log else sys.stderr
     print(_format('[E] ', msg), file=outfile, end=end)
+    if current_thread() is not main_thread():
+        # sys.exit() would only kill the calling thread, leaving a zombie
+        # daemon that looks healthy to systemd but no longer touches MSRs
+        outfile.flush()
+        os._exit(code)
     sys.exit(code)
 
 
@@ -902,6 +908,20 @@ def read_mchbar_base(cpuid):
 
 
 def power_thread(state, exit_event, cpuid):
+    """Crash-loud wrapper for _power_thread: an uncaught exception (or a
+    sys.exit() from a helper) would only kill this thread, leaving a zombie
+    daemon that looks healthy to systemd while no longer touching the hardware.
+    """
+    try:
+        _power_thread(state, exit_event, cpuid)
+    except Exception:
+        warning(f'power thread crashed:\n{traceback.format_exc()}', oneshot=False)
+        if args.log:
+            args.log.flush()
+        os._exit(1)
+
+
+def _power_thread(state, exit_event, cpuid):
     """Daemon main loop: periodically (re-)apply throttling MSRs."""
     config, regs = state['config'], state['regs']
     mchbar_base = read_mchbar_base(cpuid)
