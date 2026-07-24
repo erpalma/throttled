@@ -350,10 +350,10 @@ def set_msr_allow_writes():
             warning('Unable to set MSR allow_writes to on. You might experience warnings in kernel logs.')
 
 
-def get_dbus_next():
-    """Import dbus-next lazily so tests and --help do not need a live DBus stack."""
-    from dbus_next.aio import MessageBus
-    from dbus_next.constants import BusType
+def get_dbus_fast():
+    """Import dbus-fast lazily so tests and --help do not need a live DBus stack."""
+    from dbus_fast.aio import MessageBus
+    from dbus_fast.constants import BusType
 
     return MessageBus, BusType
 
@@ -363,7 +363,7 @@ def unwrap_dbus_value(value):
 
 
 async def get_upower_on_battery_async():
-    MessageBus, BusType = get_dbus_next()
+    MessageBus, BusType = get_dbus_fast()
     bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
     try:
         introspection = await bus.introspect(UPOWER_SERVICE, UPOWER_PATH)
@@ -424,7 +424,7 @@ def should_listen_for_resume(config):
 
 async def setup_dbus_signal_handlers(config_or_state):
     config = _current_config(config_or_state)
-    MessageBus, BusType = get_dbus_next()
+    MessageBus, BusType = get_dbus_fast()
     bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
     context = {'bus': bus}
     try:

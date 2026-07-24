@@ -19,7 +19,7 @@ class BuildDebTests(unittest.TestCase):
         self.assertIn('Usage:', result.stdout)
         self.assertIn('--output-dir', result.stdout)
         self.assertIn('--version', result.stdout)
-        self.assertIn('0.12+git.<short-sha>', result.stdout)
+        self.assertIn('0.12.1+git.<short-sha>', result.stdout)
 
     def test_default_version_uses_release_prefix(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -28,21 +28,29 @@ class BuildDebTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             deb = Path(result.stdout.strip())
             self.assertEqual(deb.parent, Path(tmp))
-            self.assertTrue(deb.name.startswith('throttled_0.12+git.'), result.stdout)
+            self.assertTrue(deb.name.startswith('throttled_0.12.1+git.'), result.stdout)
             self.assertTrue(deb.name.endswith('_all.deb'), result.stdout)
             self.assertTrue(deb.exists(), result.stdout)
 
     def test_builds_deb_with_expected_metadata_and_contents(self):
         with tempfile.TemporaryDirectory() as tmp:
             result = subprocess.run(
-                [str(SCRIPT), '--output-dir', tmp, '--version', '0.12+test', '--maintainer', 'Tester <test@example.com>'],
+                [
+                    str(SCRIPT),
+                    '--output-dir',
+                    tmp,
+                    '--version',
+                    '0.12.1+test',
+                    '--maintainer',
+                    'Tester <test@example.com>',
+                ],
                 cwd=ROOT,
                 text=True,
                 capture_output=True,
             )
 
             self.assertEqual(result.returncode, 0, result.stderr)
-            deb = Path(tmp) / 'throttled_0.12+test_all.deb'
+            deb = Path(tmp) / 'throttled_0.12.1+test_all.deb'
             self.assertTrue(deb.exists(), result.stdout)
 
             info = subprocess.run(['dpkg-deb', '--info', str(deb)], text=True, capture_output=True, check=True)
@@ -50,10 +58,10 @@ class BuildDebTests(unittest.TestCase):
             control_tar = subprocess.run(['dpkg-deb', '--ctrl-tarfile', str(deb)], capture_output=True, check=True)
 
             self.assertIn('Package: throttled', info.stdout)
-            self.assertIn('Version: 0.12+test', info.stdout)
+            self.assertIn('Version: 0.12.1+test', info.stdout)
             self.assertIn('Architecture: all', info.stdout)
             self.assertIn('Maintainer: Tester <test@example.com>', info.stdout)
-            self.assertIn('python3 (>= 3.9), python3-dbus-next, pciutils, kmod, upower, systemd', info.stdout)
+            self.assertIn('python3 (>= 3.10), python3-dbus-fast, pciutils, kmod, upower, systemd', info.stdout)
             self.assertIn('./usr/lib/throttled/throttled.py', contents.stdout)
             self.assertIn('./usr/lib/throttled/mmio.py', contents.stdout)
             self.assertIn('./etc/throttled.conf', contents.stdout)
@@ -78,7 +86,7 @@ class BuildDebTests(unittest.TestCase):
 
     def test_debian_package_artifacts_are_ignored_by_git(self):
         result = subprocess.run(
-            ['git', 'check-ignore', 'throttled_0.12+test_all.deb'],
+            ['git', 'check-ignore', 'throttled_0.12.1+test_all.deb'],
             cwd=ROOT,
             text=True,
             capture_output=True,

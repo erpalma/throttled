@@ -1,2 +1,2 @@
 configparser==7.2.0
-dbus-next==0.2.3
+dbus-fast==5.0.22
