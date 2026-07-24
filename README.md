@@ -219,6 +219,12 @@ disable it blindly: some platforms work better with `thermald --adaptive`.
 Compare monitoring output with each setup and keep the policy that behaves
 correctly on your hardware.
 
+TLP only overlaps with `throttled` when the experimental `HWP_Mode` setting is
+enabled. In that case, disable TLP's `CPU_ENERGY_PERF_POLICY_ON_*` settings by
+assigning an empty string, as described in the
+[TLP conflict guide](https://linrunner.de/tlp/faq/conflicts.html). Avoid running
+multiple tools that continuously overwrite the same HWP/EPP policy.
+
 Manufacturer utilities can persist quiet or power-saving profiles in firmware,
 so settings previously selected in another operating system may continue to
 limit performance after booting Linux.
