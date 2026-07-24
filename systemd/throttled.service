@@ -3,7 +3,7 @@ Description=Stop Intel throttling
 
 [Service]
 Type=simple
-ExecStart=/opt/throttled/venv/bin/python3 /opt/throttled/throttled.py
+ExecStart=/opt/throttled/venv/bin/throttled --config /etc/throttled.conf
 # Setting PYTHONUNBUFFERED is necessary to see the output of this service in the journal
 Environment=PYTHONUNBUFFERED=1
 # The daemon exits non-zero if the power thread dies: let systemd revive it

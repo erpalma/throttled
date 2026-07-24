@@ -1,0 +1,88 @@
+name: throttled
+arch: all
+platform: linux
+version: ${PACKAGE_VERSION}
+release: ${PACKAGE_RELEASE}
+section: admin
+priority: optional
+maintainer: throttled maintainers <noreply@example.com>
+description: |-
+  Workaround for Intel throttling issues in Linux.
+  throttled applies Intel CPU package power limits, temperature targets,
+  undervolt, and related settings to work around firmware throttling issues.
+vendor: throttled maintainers
+homepage: https://github.com/erpalma/throttled
+license: MIT
+conflicts:
+  - lenovo-throttling-fix
+  - lenovo-throttling-fix-git
+replaces:
+  - lenovo-throttling-fix
+  - lenovo-throttling-fix-git
+contents:
+  - src: ${PACKAGE_ROOT}/usr/bin
+    dst: /usr/bin
+    type: tree
+    expand: true
+  - src: ${PACKAGE_ROOT}/usr/lib/throttled
+    dst: /usr/lib/throttled
+    type: tree
+    expand: true
+  - src: ${PACKAGE_ROOT}/usr/share/doc/throttled
+    dst: /usr/share/doc/throttled
+    type: tree
+    expand: true
+  - src: ${PACKAGE_ROOT}/usr/lib/systemd/system/throttled.service
+    dst: /usr/lib/systemd/system/throttled.service
+    packager: deb
+    expand: true
+  - src: ${PACKAGE_ROOT}/usr/lib/systemd/system/throttled.service
+    dst: /usr/lib/systemd/system/throttled.service
+    packager: rpm
+    expand: true
+  - src: ${PACKAGE_ROOT}/etc/init.d/throttled
+    dst: /etc/init.d/throttled
+    packager: apk
+    expand: true
+  - src: ${PACKAGE_ROOT}/etc/throttled.conf
+    dst: /etc/throttled.conf
+    type: config|noreplace
+    expand: true
+overrides:
+  deb:
+    depends:
+      - python3 (>= 3.10)
+      - python3-dbus-fast
+      - pciutils
+      - kmod
+      - upower
+      - systemd
+    scripts:
+      postinstall: ./packaging/scripts/deb/postinstall.sh
+      preremove: ./packaging/scripts/deb/preremove.sh
+      postremove: ./packaging/scripts/deb/postremove.sh
+  rpm:
+    depends:
+      - python3 >= 3.10
+      - python3-dbus-fast
+      - pciutils
+      - kmod
+      - upower
+      - systemd
+    scripts:
+      postinstall: ./packaging/scripts/rpm/postinstall.sh
+      preremove: ./packaging/scripts/rpm/preremove.sh
+      postremove: ./packaging/scripts/rpm/postremove.sh
+  apk:
+    depends:
+      - python3>=3.10
+      - py3-dbus-fast
+      - pciutils
+      - kmod
+      - upower
+      - openrc
+rpm:
+  arch: noarch
+  group: System Environment/Daemons
+apk:
+  arch: noarch

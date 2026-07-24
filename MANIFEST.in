@@ -1,0 +1,10 @@
+include LICENSE
+include README.md
+include requirements.txt
+include nfpm.yaml
+recursive-include etc *
+recursive-include openrc *
+recursive-include packaging *
+recursive-include runit *
+recursive-include scripts *.sh
+recursive-include systemd *

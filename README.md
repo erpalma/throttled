@@ -1,7 +1,7 @@
 # Fix Intel CPU Throttling on Linux
 
-[![Release v0.12.1](https://img.shields.io/badge/release-v0.12.1-blue)](https://github.com/erpalma/throttled/releases/tag/v0.12.1)
-[Download the Debian package](https://github.com/erpalma/throttled/releases/download/v0.12.1/throttled_0.12.1_all.deb)
+[![Release v0.12.2](https://img.shields.io/badge/release-v0.12.2-blue)](https://github.com/erpalma/throttled/releases/tag/v0.12.2)
+[Download the Debian package](https://github.com/erpalma/throttled/releases/download/v0.12.2/throttled_0.12.2_all.deb)
 
 This tool was originally developed to fix Linux CPU throttling issues affecting Lenovo T480 / T480s / X1C6 as described [here](https://www.reddit.com/r/thinkpad/comments/870u0a/t480s_linux_throttling_bug/).
 
@@ -97,6 +97,7 @@ sudo apt install git python3-venv python3-wheel
 git clone https://github.com/erpalma/throttled.git
 sudo ./throttled/install.sh
 ```
+The installer detects systemd, OpenRC, or runit. Use `--init systemd|openrc|runit` to override detection, or `--no-start` to install without enabling and starting the service.
 If you own a X1C6 you can also check a tutorial for Ubuntu 18.04 [here](https://mensfeld.pl/2018/05/lenovo-thinkpad-x1-carbon-6th-gen-2018-ubuntu-18-04-tweaks/).
 
 You should make sure that **_thermald_** is not setting it back down. Stopping/disabling it will do the trick:
@@ -121,7 +122,31 @@ You can build a local `.deb` package without creating a virtualenv or using `pip
 sudo apt install ./dist/throttled_*.deb
 systemctl status throttled.service
 ```
-The package installs the daemon under `/usr/lib/throttled`, the config file at `/etc/throttled.conf`, and a systemd unit at `/lib/systemd/system/throttled.service`. During installation on a running systemd host, the package reloads systemd, enables `throttled.service`, and restarts it. In chroots or containers without active systemd, the package skips service management.
+The package installs the daemon under `/usr/lib/throttled`, the `throttled` command under `/usr/bin`, the config file at `/etc/throttled.conf`, and a systemd unit at `/usr/lib/systemd/system/throttled.service`. During installation on a running systemd host, the package reloads systemd, enables `throttled.service`, and restarts it. In chroots or containers without active systemd, the package skips service management.
+
+### Generic DEB, RPM, and APK packages
+Maintainers and testers can build all three native formats from the same staged filesystem using [nFPM](https://nfpm.goreleaser.com/):
+```
+./scripts/build-packages.sh --version 0.12.2 --release 1
+```
+Use `--packager deb`, `--packager rpm`, or `--packager apk` to build selected formats. The generic RPM currently targets Fedora-family dependency names, while the APK targets Alpine edge/testing. See [`packaging/README.md`](packaging/README.md) for the filesystem contract, service lifecycle, and downstream packaging notes.
+After installing the RPM, enable its service explicitly:
+```
+sudo systemctl enable --now throttled.service
+```
+After installing the APK with `apk add --allow-untrusted`, enable its OpenRC service explicitly:
+```
+sudo rc-update add throttled default
+sudo rc-service throttled start
+```
+
+### Python wheel and source archive
+The Python payload also uses standard `pyproject.toml` metadata:
+```
+python3 -m pip install build
+python3 -m build
+```
+The resulting wheel provides the `throttled` command, but a wheel by itself does not install the privileged system service, kernel tools, or configuration. End users should prefer a native distribution package or `install.sh`.
 
 ### Fedora
 A [copr repository](https://copr.fedorainfracloud.org/coprs/abn/throttled/) is available and can be used as detailed below. You can find the configuration installed at `/etc/throttled.conf`. The issue tracker for this packaging is available [here](https://github.com/abn/throttled-rpm/issues).

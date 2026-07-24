@@ -18,7 +18,7 @@ Build a Debian package for throttled.
 
 Options:
   --output-dir DIR      Directory where the .deb is written (default: dist)
-  --version VERSION    Debian package version (default: 0.12.1+git.<short-sha>)
+  --version VERSION     Debian package version (default: <project-version>+git.<short-sha>)
   --maintainer VALUE   Maintainer field for DEBIAN/control
   -h, --help           Show this help
 EOF
@@ -60,12 +60,15 @@ fi
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 ROOT_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
+PROJECT_VERSION=$(
+    PYTHONPATH="$ROOT_DIR" python3 -c 'from throttled_version import __version__; print(__version__)'
+)
 
 if [ -z "$VERSION" ]; then
     if GIT_SHA=$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null); then
-        VERSION="0.12.1+git.$GIT_SHA"
+        VERSION="$PROJECT_VERSION+git.$GIT_SHA"
     else
-        VERSION="0.12.1+local"
+        VERSION="$PROJECT_VERSION+local"
     fi
 fi
 
@@ -73,33 +76,8 @@ BUILD_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/throttled-deb.XXXXXX")
 trap 'rm -rf "$BUILD_ROOT"' EXIT HUP INT TERM
 
 PKG_ROOT="$BUILD_ROOT/pkg"
-mkdir -p \
-    "$PKG_ROOT/DEBIAN" \
-    "$PKG_ROOT/etc" \
-    "$PKG_ROOT/lib/systemd/system" \
-    "$PKG_ROOT/usr/lib/throttled" \
-    "$PKG_ROOT/usr/share/doc/throttled"
-
-install -m 0755 "$ROOT_DIR/throttled.py" "$PKG_ROOT/usr/lib/throttled/throttled.py"
-install -m 0644 "$ROOT_DIR/mmio.py" "$PKG_ROOT/usr/lib/throttled/mmio.py"
-install -m 0644 "$ROOT_DIR/etc/throttled.conf" "$PKG_ROOT/etc/throttled.conf"
-install -m 0644 "$ROOT_DIR/LICENSE" "$PKG_ROOT/usr/share/doc/throttled/copyright"
-
-cat > "$PKG_ROOT/lib/systemd/system/throttled.service" <<'EOF'
-[Unit]
-Description=Stop Intel throttling
-After=multi-user.target
-
-[Service]
-Type=simple
-ExecStart=/usr/bin/python3 /usr/lib/throttled/throttled.py --config /etc/throttled.conf
-Environment=PYTHONUNBUFFERED=1
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-EOF
+mkdir -p "$PKG_ROOT/DEBIAN"
+"$ROOT_DIR/scripts/stage-package.sh" "$PKG_ROOT"
 
 cat > "$PKG_ROOT/DEBIAN/control" <<EOF
 Package: $PACKAGE
@@ -120,56 +98,10 @@ cat > "$PKG_ROOT/DEBIAN/conffiles" <<'EOF'
 /etc/throttled.conf
 EOF
 
-cat > "$PKG_ROOT/DEBIAN/postinst" <<'EOF'
-#!/bin/sh
-set -e
-
-if [ "$1" = "configure" ] && command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
-    systemctl daemon-reload || true
-    systemctl enable throttled.service >/dev/null 2>&1 || true
-    systemctl restart throttled.service || true
-fi
-
-exit 0
-EOF
-
-cat > "$PKG_ROOT/DEBIAN/prerm" <<'EOF'
-#!/bin/sh
-set -e
-
-case "$1" in
-    remove|deconfigure)
-        if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
-            systemctl stop throttled.service || true
-            systemctl disable throttled.service >/dev/null 2>&1 || true
-        fi
-        ;;
-esac
-
-exit 0
-EOF
-
-cat > "$PKG_ROOT/DEBIAN/postrm" <<'EOF'
-#!/bin/sh
-set -e
-
-case "$1" in
-    remove|purge|disappear)
-        if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
-            systemctl daemon-reload || true
-        fi
-        ;;
-esac
-
-if [ "$1" = "purge" ] && command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
-    systemctl reset-failed throttled.service || true
-fi
-
-exit 0
-EOF
-
 chmod 0644 "$PKG_ROOT/DEBIAN/control" "$PKG_ROOT/DEBIAN/conffiles"
-chmod 0755 "$PKG_ROOT/DEBIAN/postinst" "$PKG_ROOT/DEBIAN/prerm" "$PKG_ROOT/DEBIAN/postrm"
+install -m 0755 "$ROOT_DIR/packaging/scripts/deb/postinstall.sh" "$PKG_ROOT/DEBIAN/postinst"
+install -m 0755 "$ROOT_DIR/packaging/scripts/deb/preremove.sh" "$PKG_ROOT/DEBIAN/prerm"
+install -m 0755 "$ROOT_DIR/packaging/scripts/deb/postremove.sh" "$PKG_ROOT/DEBIAN/postrm"
 mkdir -p "$OUTPUT_DIR"
 
 DEB_PATH="$OUTPUT_DIR/${PACKAGE}_${VERSION}_${ARCHITECTURE}.deb"

@@ -1,5 +1,7 @@
 import importlib.util
+import io
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 
 
@@ -28,6 +30,17 @@ class CLITests(unittest.TestCase):
         help_output = throttled.build_arg_parser().format_help()
 
         self.assertNotIn('\x1b[', help_output)
+
+    def test_version_comes_from_package_metadata(self):
+        throttled = load_throttled()
+        output = io.StringIO()
+
+        with redirect_stdout(output):
+            with self.assertRaises(SystemExit) as exit_context:
+                throttled.build_arg_parser().parse_args(['--version'])
+
+        self.assertEqual(exit_context.exception.code, 0)
+        self.assertTrue(output.getvalue().strip().endswith(f' {throttled.__version__}'))
 
 
 if __name__ == '__main__':

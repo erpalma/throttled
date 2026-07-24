@@ -1,3 +1,43 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "throttled"
+dynamic = ["version"]
+description = "Workaround for Intel throttling issues in Linux"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "throttled maintainers" }]
+dependencies = [
+    "configparser==7.2.0",
+    "dbus-fast==5.0.22",
+]
+classifiers = [
+    "Environment :: No Input/Output (Daemon)",
+    "Intended Audience :: System Administrators",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: System :: Hardware",
+    "Topic :: System :: Systems Administration",
+]
+
+[project.urls]
+Homepage = "https://github.com/erpalma/throttled"
+Issues = "https://github.com/erpalma/throttled/issues"
+
+[project.scripts]
+throttled = "throttled:main"
+
+[tool.setuptools]
+py-modules = ["mmio", "throttled", "throttled_version"]
+
+[tool.setuptools.dynamic]
+version = { attr = "throttled_version.__version__" }
+
 [tool.black]
 line-length = 120
 skip-string-normalization = true

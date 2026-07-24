@@ -19,6 +19,7 @@ from threading import Event, Thread, current_thread, main_thread
 from time import time
 
 from mmio import MMIO, MMIOError
+from throttled_version import __version__
 
 DEFAULT_SYSFS_POWER_PATH = '/sys/class/power_supply/AC*/online'
 UPOWER_SERVICE = 'org.freedesktop.UPower'
@@ -1194,6 +1195,7 @@ def build_arg_parser():
     parser.add_argument('--config', default='/etc/throttled.conf', help='override default config file path')
     parser.add_argument('--force', action='store_true', help='bypass compatibility checks (EXPERTS only)')
     parser.add_argument('--log', metavar='/path/to/file', help='log to file instead of stdout')
+    parser.add_argument('--version', action='version', version=f'%(prog)s {__version__}')
     return parser
 
 

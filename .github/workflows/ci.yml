@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  python:
+    name: Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version:
+          - "3.10"
+          - "3.12"
+          - "3.14"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install test and build dependencies
+        run: |
+          python -m pip install build
+          python -m pip install -r requirements.txt
+      - name: Run unit tests
+        run: python -m unittest discover -s tests
+      - name: Build wheel and source archive
+        run: python -m build
+      - name: Smoke-test the installed wheel
+        run: |
+          python -m venv /tmp/throttled-wheel
+          /tmp/throttled-wheel/bin/python -m pip install --no-deps dist/*.whl
+          /tmp/throttled-wheel/bin/throttled --version
+          /tmp/throttled-wheel/bin/throttled --help
+      - uses: actions/upload-artifact@v4
+        if: matrix.python-version == '3.14'
+        with:
+          name: python-distributions
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
+
+  packages:
+    name: Native packages
+    runs-on: ubuntu-latest
+    env:
+      NFPM_VERSION: v2.47.0
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - name: Install package inspection tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes rpm
+      - name: Install nFPM
+        run: |
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@${NFPM_VERSION}
+          echo "$(go env GOPATH)/bin" >> "${GITHUB_PATH}"
+      - name: Check shell scripts
+        run: |
+          sh -n install.sh
+          sh -n packaging/throttled
+          find scripts packaging/scripts -type f -name '*.sh' -exec sh -n {} +
+      - name: Run packaging tests
+        run: python3 -m unittest tests.test_build_deb tests.test_packaging
+      - name: Build native packages
+        run: |
+          PACKAGE_VERSION=$(PYTHONPATH=. python3 -c 'from throttled_version import __version__; print(__version__)')
+          echo "PACKAGE_VERSION=${PACKAGE_VERSION}" >> "${GITHUB_ENV}"
+          ./scripts/build-deb.sh --version "${PACKAGE_VERSION}+ci"
+          ./scripts/build-packages.sh --version "${PACKAGE_VERSION}" --release 0.ci
+      - name: Inspect package contents
+        run: |
+          dpkg-deb --info "dist/throttled_${PACKAGE_VERSION}+ci_all.deb"
+          dpkg-deb --contents "dist/throttled_${PACKAGE_VERSION}-0.ci_all.deb" | tee /tmp/deb-files
+          rpm -qpi "dist/throttled-${PACKAGE_VERSION}-0.ci.noarch.rpm"
+          rpm -qpl "dist/throttled-${PACKAGE_VERSION}-0.ci.noarch.rpm" | tee /tmp/rpm-files
+          file "dist/throttled_${PACKAGE_VERSION}-0.ci_noarch.apk"
+          tar -tzf "dist/throttled_${PACKAGE_VERSION}-0.ci_noarch.apk" 2>/dev/null | tee /tmp/apk-files
+          grep -q 'usr/lib/systemd/system/throttled.service' /tmp/deb-files
+          grep -q 'usr/lib/systemd/system/throttled.service' /tmp/rpm-files
+          grep -q 'etc/init.d/throttled' /tmp/apk-files
+          ! grep -q 'etc/init.d/throttled' /tmp/deb-files
+          ! grep -q 'etc/init.d/throttled' /tmp/rpm-files
+          ! grep -q 'systemd/system/throttled.service' /tmp/apk-files
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-packages
+          path: |
+            dist/*.deb
+            dist/*.rpm
+            dist/*.apk

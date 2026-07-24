@@ -25,6 +25,8 @@ wheels/
 .installed.cfg
 *.egg
 *.deb
+*.rpm
+*.apk
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
