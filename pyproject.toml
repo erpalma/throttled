@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "throttled"
 dynamic = ["version"]
-description = "Workaround for Intel throttling issues in Linux"
+description = "Linux daemon for Intel CPU power limits and firmware-induced throttling"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"

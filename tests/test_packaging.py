@@ -122,6 +122,8 @@ class PackagingTests(unittest.TestCase):
         self.assertTrue(__version__)
         self.assertIn('version = { attr = "throttled_version.__version__" }', pyproject)
         self.assertIn('include nfpm.yaml', manifest)
+        self.assertIn('include docs/static-power-limits.md', manifest)
+        self.assertIn('include docs/supported-hardware.md', manifest)
         self.assertIn('recursive-include packaging *', manifest)
         for requirement in requirements:
             self.assertIn(f'"{requirement}"', pyproject)

@@ -1,393 +1,302 @@
-# Fix Intel CPU Throttling on Linux
+# throttled
 
-[![Release v0.12.2](https://img.shields.io/badge/release-v0.12.2-blue)](https://github.com/erpalma/throttled/releases/tag/v0.12.2)
-[Download the Debian package](https://github.com/erpalma/throttled/releases/download/v0.12.2/throttled_0.12.2_all.deb)
+[![Latest release](https://img.shields.io/github/v/release/erpalma/throttled)](https://github.com/erpalma/throttled/releases/latest)
+[![CI](https://github.com/erpalma/throttled/actions/workflows/ci.yml/badge.svg)](https://github.com/erpalma/throttled/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/github/license/erpalma/throttled)](https://github.com/erpalma/throttled/blob/master/LICENSE)
 
-This tool was originally developed to fix Linux CPU throttling issues affecting Lenovo T480 / T480s / X1C6 as described [here](https://www.reddit.com/r/thinkpad/comments/870u0a/t480s_linux_throttling_bug/).
+`throttled` is a Linux daemon that prevents unwanted CPU throttling on some
+Intel-based systems. It periodically restores package power limits (PL1/PL2)
+and the temperature target in MSR and MCHBAR registers when firmware or the
+embedded controller resets them.
 
-The CPU package power limit (PL1/2) is forced to a value of **44 W** (29 W on battery) and the temperature trip point to **95 'C** (85 'C on battery) by overriding default values in MSR and MCHBAR every 5 seconds (30 on battery) to block the Embedded Controller from resetting these values to default.
+It also supports separate AC and battery profiles, undervolting, IccMax,
+cTDP, HWP hints, and live throttling diagnostics.
 
-On systems where the EC doesn't reset the values (ex: ASUS Zenbook UX430UNR), the power limit can be altered by using the official intel_rapl driver (see [Static fix](#static-fix) for more information)
+> [!CAUTION]
+> `throttled` runs as root and writes directly to CPU and chipset registers.
+> Incorrect power, temperature, voltage, or current values can make a system
+> unstable or damage hardware. Review the configuration for your CPU and
+> cooling system before enabling the service.
 
-## Warning!
-The 30 Oct 2021 update switched from the legacy name `lenovo_fix` for the tool/config/system to a more uniform `throttled`. The install script was updated, but please report back if anything breaks.
+## When to use it
 
-### Tested hardware
-Other users have confirmed that the tool is also working for these laptops:
-- Lenovo T470s, T480, T480s, X1C5, X1C6, X1C8, T580, L590, L490, L480, T470, X280, X390, ThinkPad Anniversary Edition 25, E590 w/ RX 550X, P43s, P53, E480, E580, T14 Gen 1, P14s Gen 1, T15 Gen 1, P15s Gen 1, E14 Gen 2, X1 Extreme Gen 4
-- Dell XPS 9365, 9370, 9550, 7390 2-in-1, Latitude 7390 2-in-1, Inspiron 16 Plus 7620, Precision 7720(with thermald)
-- Microsoft Surface Book 2
-- HP Probook 470 G5, Probook 450 G5, ZBook Firefly 15 G7
+Use `throttled` when an Intel laptop or small-form-factor system runs below its
+expected frequency because firmware repeatedly applies overly conservative
+power or temperature limits. Confirm the problem first with
+[`s-tui`](https://github.com/amanusk/s-tui), `turbostat`, or:
 
-
-I will keep this list updated.
-
-### Is this tool really doing something on my PC??
-I suggest you to use the excellent **[s-tui](https://github.com/amanusk/s-tui)** tool to check and monitor the CPU usage, frequency, power and temperature under load!
-
-### Undervolt
-The tool supports **undervolting** the CPU by configuring voltage offsets for CPU, cache, GPU, System Agent and Analog I/O planes. The tool will re-apply undervolt on resume from standby and hibernate by listening to DBus signals. You can now either use the `UNDERVOLT` key in config to set global values or the `UNDERVOLT.AC` and `UNDERVOLT.BATTERY` keys to selectively set undervolt values for the two power profiles.
-
-**===== Notice that undervolt is typically locked from 10th gen onwards! =====**
-
-### IccMax (EXPERTS ONLY)
-The tool now supports overriding the **IccMax** by configuring the maximum allowed current for CPU, cache and GPU planes. The tool will re-apply IccMax on resume from standby and hibernate. You can now either use the `ICCMAX` key in config to set global values or the `ICCMAX.AC` and `ICCMAX.BATTERY` keys to selectively set current values for the two power profiles. **NOTE:** the values specified in the config file are the actual current limit of your system, so those are not a offset from the default values as for the undervolt. As such, you should first find your system default values with the `--monitor` command.
-
-### HWP override (EXPERIMENTAL)
-I have found that under load my CPU was not always hitting max turbo frequency, in particular when using one/two cores only. For instance, when running [prime95](https://www.mersenne.org/download/) (1 core, test #1) my CPU is limited to about 3500 MHz over the theoretical 4000 MHz maximum. The reason is the value for the HWP energy performance [hints](http://manpages.ubuntu.com/manpages/artful/man8/x86_energy_perf_policy.8.html). By default TLP sets this value to `balance_performance` on AC in order to reduce the power consumption/heat in idle. By setting this value to `performance` I was able to reach 3900 MHz in the prime95 single core test, achieving a +400 MHz boost. Since this value forces the CPU to full speed even during idle, a new experimental feature allows to automatically set HWP to performance under load and revert it to balanced when idle. This feature can be enabled (in AC mode *only*) by setting `HWP_Mode` to `True` in `etc/throttled.conf`.
-
-I have run **[Geekbench 4](https://browser.geekbench.com/v4/cpu/8656840)** and now I can get a score of 5391/17265! On `balance_performance` I can reach only 4672/16129, so **15% improvement** in single core and 7% in multicore, not bad ;)
-
-### setting cTDP (EXPERIMENTAL)
-On a lot of modern CPUs from Intel one can configure the TDP up or down based on predefined profiles. This is what this option does. For a i7-8650U normal would be 15W, up profile is setting it to 25W and down to 10W. You can lookup the values of your CPU at the Intel product website.
-
-## Requirements
-A stripped down version of the python module `python-periphery` is now built-in and it is used for accessing the MCHBAR register by memory mapped I/O. You also need `dbus-fast` for listening to DBus signals on resume from sleep/hibernate and power-source changes.
-
-Older versions used `dbus-python` together with the `PyGObject`/GLib main loop to dispatch DBus notifications. The current implementation uses `dbus-fast` with Python's `asyncio` event loop instead, so the Python GObject/GLib bindings are no longer required. A running system DBus service is still required for UPower and logind signals.
-
-### Writing to MSR and PCI BAR
-Some time ago a feature called [Kernel Lockdown](https://lwn.net/Articles/706637/) was added to Linux. Kernel Lockdown automatically enables some security measures when Secure Boot is enabled, among them restricted access to MSR and PCI BAR via /dev/mem, which this tool requires. There are two ways to get around this: You can either disable Secure Boot in your firmware settings, or disable the Kernel Lockdown LSM.
-
-The LSM can be disabled this way: Check the contents of the file `/sys/kernel/security/lsm` (example contents: `capability,lockdown,yama`). Take the contents of the file, remove `lockdown` and add the rest as a kernel parameter, like this: `lsm=capability,yama`. Reboot and Kernel Lockdown will be disabled!
-
-As of Linux 5.9, kernel messages will be logged whenever the script writes to MSR registers. These aren't a problem for now, but there's some indication that future kernels may restrict MSR writes from userspace by default. This is being tracked by issue #215. The messages will look something like:
-```
-[  324.833543] msr: Write to unrecognized MSR 0x1a2 by python3
-               Please report to x86@kernel.org
+```sh
+sudo throttled --monitor
 ```
 
-Note that some kernels (e.g. [linux-hardened](https://www.archlinux.org/packages/extra/x86_64/linux-hardened/)) will prevent from writing to `/dev/mem` too. Specifically, you need a kernel with `CONFIG_DEVMEM` and `CONFIG_X86_MSR` set.
+The project started as a workaround for the Lenovo T480, T480s, and X1 Carbon
+Gen 6, but users have reported success on many Lenovo, Dell, HP, Microsoft, and
+ASUS systems. Support depends on the CPU, firmware, and kernel rather than the
+laptop brand. See the
+[community-reported hardware list](https://github.com/erpalma/throttled/blob/master/docs/supported-hardware.md).
 
-### Thermald
-As discovered by *DEvil0000* the Linux Thermal Monitor ([thermald](https://github.com/intel/thermal_daemon)) can conflict with the purpose of this tool. In particular, thermald might be pre-installed (e.g. on Ubuntu) and configured in such a way to keep the CPU temperature below a certain threshold (~80 'C) by applying throttling or messing up with RAPL or other CPU-specific registers. I strongly suggest to either disable/uninstall it or to review its default configuration.
+## Features
 
-Note that on some platforms thermald seems to be required. E.g. Dell Latitude 7320 i7-1185G7, Linux 6.6.48, Void Linux musl, still runs into throttling issues unless `thermald --adaptive` is running. If you are running throttled but still seeing throttling issues, try testing with `thermald --adaptive` running as well.
-
-### Update
-The tool runs on Python 3.10 or newer and the install script automatically creates a virtualenv in `/opt/throttled`.
+- Restores configurable PL1, PL2, time-window, and temperature limits.
+- Uses independent AC and battery profiles and reacts to power-source changes.
+- Re-applies settings after suspend and hibernation through system D-Bus.
+- Supports configurable CPU, cache, GPU, System Agent, and Analog I/O
+  undervolting where firmware permits it.
+- Supports IccMax overrides and experimental cTDP, HWP, and BD PROCHOT controls.
+- Reloads `/etc/throttled.conf` automatically when the file changes.
+- Reports thermal, power, current, and cross-domain throttling causes in real
+  time.
+- Runs with systemd, OpenRC, or runit.
 
 ## Installation
 
-### Arch Linux [package](https://archlinux.org/packages/extra/any/throttled/):
+### Release packages
+
+The [latest release](https://github.com/erpalma/throttled/releases/latest)
+provides native packages and Python distributions. Native packages include the
+daemon, default configuration, and service definition.
+
+| System | Package |
+| --- | --- |
+| Debian-family system with `python3-dbus-fast` | [DEB](https://github.com/erpalma/throttled/releases/download/v0.12.2/throttled_0.12.2_all.deb) |
+| Fedora-family system | [RPM](https://github.com/erpalma/throttled/releases/download/v0.12.2/throttled-0.12.2-1.noarch.rpm) |
+| Alpine edge/testing | [APK](https://github.com/erpalma/throttled/releases/download/v0.12.2/throttled_0.12.2-1_noarch.apk) |
+| Python 3.10+ | [wheel](https://github.com/erpalma/throttled/releases/download/v0.12.2/throttled-0.12.2-py3-none-any.whl) |
+| Packagers | [source archive](https://github.com/erpalma/throttled/releases/download/v0.12.2/throttled-0.12.2.tar.gz) |
+
+Verify downloads with the
+[`SHA256SUMS`](https://github.com/erpalma/throttled/releases/download/v0.12.2/SHA256SUMS)
+file published with the release.
+
+DEB:
+
+```sh
+sudo apt install ./throttled_0.12.2_all.deb
 ```
-pacman -S throttled
+
+On a running systemd host, the DEB enables and starts the service.
+
+Fedora:
+
+```sh
+sudo dnf install ./throttled-0.12.2-1.noarch.rpm
 sudo systemctl enable --now throttled.service
 ```
-Thanks to *felixonmars* for creating and maintaining this package.
 
-### Artix Linux
-```
-makepkg -si
-sudo rc-update add throttled default
-sudo rc-service throttled start
-```
+Alpine:
 
-### Alpine Linux
-You need to be on `edge` and have the `testing` repository enabled.
-```
-doas apk add throttled
-doas rc-update add throttled
+```sh
+doas apk add --allow-untrusted ./throttled_0.12.2-1_noarch.apk
+doas rc-update add throttled default
 doas rc-service throttled start
 ```
 
-### Debian/Ubuntu
-```
-sudo apt install git python3-venv python3-wheel
+The upstream APK is not repository-signed, which is why local installation
+requires `--allow-untrusted`.
+
+The wheel installs the `throttled` command only. It does not install the
+privileged service, OS dependencies, or `/etc/throttled.conf`; end users should
+prefer a native package or the source installer.
+
+### Distribution packages
+
+- Arch Linux: `sudo pacman -S throttled`
+- Alpine edge/testing: `doas apk add throttled`
+- Fedora:
+  [Copr package](https://copr.fedorainfracloud.org/coprs/abn/throttled/)
+- Gentoo: `sudo emerge -av sys-power/throttled`
+
+Distribution packages are maintained independently and can lag behind the
+latest upstream release.
+
+### Install from source
+
+Install Python 3.10 or newer, the Python virtual-environment tooling, `git`,
+`kmod`, `pciutils`, and UPower using your distribution package manager. Then:
+
+```sh
 git clone https://github.com/erpalma/throttled.git
-sudo ./throttled/install.sh
-```
-The installer detects systemd, OpenRC, or runit. Use `--init systemd|openrc|runit` to override detection, or `--no-start` to install without enabling and starting the service.
-If you own a X1C6 you can also check a tutorial for Ubuntu 18.04 [here](https://mensfeld.pl/2018/05/lenovo-thinkpad-x1-carbon-6th-gen-2018-ubuntu-18-04-tweaks/).
-
-You should make sure that **_thermald_** is not setting it back down. Stopping/disabling it will do the trick:
-```
-sudo systemctl stop thermald.service
-sudo systemctl disable thermald.service
-```
-If you want to keep it disabled even after a package update you should also run:
-```
-sudo systemctl mask thermald.service
+cd throttled
+sudo ./install.sh
 ```
 
-In order to check if the service is well started, you could run:
-```
-systemctl status throttled
+The installer creates an isolated environment in `/opt/throttled`, preserves
+an existing `/etc/throttled.conf`, detects systemd, OpenRC, or runit, and
+enables the service. Use `--init systemd|openrc|runit` to override detection,
+or `--no-start` to install without enabling or starting it.
+
+## Configuration
+
+The configuration file is `/etc/throttled.conf`. It contains separate `[AC]`
+and `[BATTERY]` profiles for power limits, update intervals, temperature
+targets, and experimental controls:
+
+```ini
+[GENERAL]
+Enabled: True
+Autoreload: True
+
+[AC]
+Update_Rate_s: 5
+PL1_Tdp_W: 44
+PL1_Duration_s: 28
+PL2_Tdp_W: 44
+PL2_Duration_S: 0.002
+Trip_Temp_C: 95
+
+[BATTERY]
+Update_Rate_s: 30
+PL1_Tdp_W: 29
+PL1_Duration_s: 28
+PL2_Tdp_W: 44
+PL2_Duration_S: 0.002
+Trip_Temp_C: 85
 ```
 
-### Local Debian package
-You can build a local `.deb` package without creating a virtualenv or using `pip` during installation:
-```
-./scripts/build-deb.sh
-sudo apt install ./dist/throttled_*.deb
+These are project defaults, not recommendations for every system. Check your
+processor limits and cooling capacity before changing them. The service reloads
+valid configuration changes automatically when `Autoreload` is enabled.
+
+### Undervolting and IccMax
+
+Voltage offsets can be configured independently in `[UNDERVOLT.AC]` and
+`[UNDERVOLT.BATTERY]`. Only zero or negative millivolt values are accepted.
+Start at zero and test small changes under load; values stable on one CPU can
+crash another CPU of the same model.
+
+Undervolting is disabled by firmware or microcode on many newer Intel systems.
+`throttled` cannot bypass a locked voltage interface.
+
+IccMax values in `[ICCMAX.AC]` and `[ICCMAX.BATTERY]` are absolute current
+limits in amperes, not offsets. Inspect the system defaults with `--monitor`
+before enabling them.
+
+## Operation and diagnostics
+
+Check the service:
+
+```sh
 systemctl status throttled.service
-```
-The package installs the daemon under `/usr/lib/throttled`, the `throttled` command under `/usr/bin`, the config file at `/etc/throttled.conf`, and a systemd unit at `/usr/lib/systemd/system/throttled.service`. During installation on a running systemd host, the package reloads systemd, enables `throttled.service`, and restarts it. In chroots or containers without active systemd, the package skips service management.
-
-### Generic DEB, RPM, and APK packages
-Maintainers and testers can build all three native formats from the same staged filesystem using [nFPM](https://nfpm.goreleaser.com/):
-```
-./scripts/build-packages.sh --version 0.12.2 --release 1
-```
-Use `--packager deb`, `--packager rpm`, or `--packager apk` to build selected formats. The generic RPM currently targets Fedora-family dependency names, while the APK targets Alpine edge/testing. See [`packaging/README.md`](packaging/README.md) for the filesystem contract, service lifecycle, and downstream packaging notes.
-After installing the RPM, enable its service explicitly:
-```
-sudo systemctl enable --now throttled.service
-```
-After installing the APK with `apk add --allow-untrusted`, enable its OpenRC service explicitly:
-```
-sudo rc-update add throttled default
-sudo rc-service throttled start
+journalctl -u throttled.service -b
 ```
 
-### Python wheel and source archive
-The Python payload also uses standard `pyproject.toml` metadata:
+On OpenRC, use `rc-service throttled status`; on runit, use
+`sv status throttled`.
+
+Monitor throttling causes and register values:
+
+```sh
+sudo throttled --monitor
+sudo throttled --monitor 0.5
+sudo throttled --debug
 ```
+
+The monitor distinguishes thermal, power, current, and cross-domain limits.
+`--debug` reads back written values and prints CPU feature and thermal status
+information. Both commands run the control loop in the foreground, so stop the
+service first to avoid running two instances and press `Ctrl+C` when finished.
+Run `throttled --help` for all command-line options.
+
+## Requirements and known conflicts
+
+- Linux on a supported Intel CPU.
+- Python 3.10 or newer.
+- Access to `/dev/cpu/*/msr` and `/dev/mem`.
+- A kernel with `CONFIG_X86_MSR` and `CONFIG_DEVMEM`.
+- `dbus-fast`, a running system D-Bus, UPower, `modprobe`, and `setpci`.
+- Root privileges; containers, Flatpak, Snap, and AppImage sandboxes are not
+  supported deployment targets.
+
+Secure Boot commonly enables Kernel Lockdown, which can block the MSR and PCI
+BAR access required by `throttled`. Check the service log and
+`/sys/kernel/security/lsm` before changing security settings. Disabling Secure
+Boot or Kernel Lockdown reduces system protection and should be an informed,
+system-specific decision. Hardened kernels can deny `/dev/mem` access even
+without Lockdown.
+
+`thermald` can conflict by applying its own RAPL or temperature policy. Do not
+disable it blindly: some platforms work better with `thermald --adaptive`.
+Compare monitoring output with each setup and keep the policy that behaves
+correctly on your hardware.
+
+Manufacturer utilities can persist quiet or power-saving profiles in firmware,
+so settings previously selected in another operating system may continue to
+limit performance after booting Linux.
+
+If firmware does not repeatedly reset the limits, the kernel's `intel_rapl`
+interface may be sufficient and avoids a resident daemon. See the
+[static RAPL alternative](https://github.com/erpalma/throttled/blob/master/docs/static-power-limits.md).
+
+## Updating and removal
+
+For a native package, use the distribution package manager and review changes
+to `/etc/throttled.conf` after upgrading.
+
+For a source installation:
+
+```sh
+cd throttled
+git pull --ff-only
+sudo ./install.sh
+```
+
+To stop and disable the service:
+
+```sh
+sudo systemctl disable --now throttled.service
+```
+
+OpenRC users can run `sudo rc-service throttled stop` followed by
+`sudo rc-update del throttled default`. Runit users can run
+`sudo sv down throttled` and remove the `/var/service/throttled` link. Remove
+native packages with the corresponding package manager.
+
+## Packaging and development
+
+Build the Python wheel and source archive:
+
+```sh
 python3 -m pip install build
 python3 -m build
 ```
-The resulting wheel provides the `throttled` command, but a wheel by itself does not install the privileged system service, kernel tools, or configuration. End users should prefer a native distribution package or `install.sh`.
 
-### Fedora
-A [copr repository](https://copr.fedorainfracloud.org/coprs/abn/throttled/) is available and can be used as detailed below. You can find the configuration installed at `/etc/throttled.conf`. The issue tracker for this packaging is available [here](https://github.com/abn/throttled-rpm/issues).
-```
-sudo dnf copr enable abn/throttled
-sudo dnf install -y throttled
+Build all native package formats with
+[nFPM](https://nfpm.goreleaser.com/):
 
-sudo systemctl enable --now throttled
+```sh
+./scripts/build-packages.sh
 ```
 
-If you prefer to install from source, you can use the following commands.
-```
-sudo dnf install git python3-devel python3-wheel
-git clone https://github.com/erpalma/throttled.git
-sudo ./throttled/install.sh
-```
-Feedback about Fedora installation is welcome.
+Use `--packager deb`, `--packager rpm`, or `--packager apk` to select a
+format. The lightweight DEB builder only requires `dpkg-deb`:
 
-### Fedora Silverblue
-
-
-Download the `.repo` file matching your Fedora on the [copr repository page](https://copr.fedorainfracloud.org/coprs/abn/throttled/) then copy it to `/etc/yum.repos.d/`.
-
-You can then install the package:
-
-```console
-rpm-ostree override remove thermald
-rpm-ostree install throttled
-systemctl reboot
-
-sudo systemctl enable --now throttled
+```sh
+./scripts/build-deb.sh
 ```
 
-### openSUSE
-For source installation, install the Python tooling first:
-```
-sudo zypper install git python3-devel python3-pip
-git clone https://github.com/erpalma/throttled.git
-sudo ./throttled/install.sh
+See the
+[packaging guide](https://github.com/erpalma/throttled/blob/master/packaging/README.md)
+for the runtime and filesystem contract, dependency mapping, service lifecycle,
+and downstream packaging notes.
+
+Run the test suite with:
+
+```sh
+python3 -m unittest discover -s tests
 ```
 
-### Gentoo
-The ebuild is now in the official tree!
-```
-sudo emerge -av sys-power/throttled
-# when using OpenRC:
-rc-update add throttled default
-/etc/init.d/throttled start
-# when using systemd:
-systemctl enable --now throttled.service
-```
+Bug reports and pull requests are welcome in the
+[issue tracker](https://github.com/erpalma/throttled/issues).
 
-### Solus
-```
-sudo eopkg it -c system.devel
-sudo eopkg it git python3-devel
-git clone https://github.com/erpalma/throttled.git
-sudo ./throttled/install.sh
-```
+## Project history
 
-### Void
+The project was created for a
+[firmware throttling problem](https://www.reddit.com/r/thinkpad/comments/870u0a/t480s_linux_throttling_bug/)
+seen on the 2018 Lenovo ThinkPad generation. It was originally installed as
+`lenovo_fix` and was renamed to `throttled` in 2021. Current installations use
+`/etc/throttled.conf`, the `throttled` command, and `throttled.service`.
 
-The installation itself will create a runit service as throttled, enable it and start it. Before installation, make sure dbus is running `sv up dbus`.
+## License
 
-```
-sudo xbps-install -Sy git python3-devel python3-wheel
-
-git clone https://github.com/erpalma/throttled.git
-
-sudo ./throttled/install.sh
-```
-
-### Uninstall
-To permanently stop and disable the execution just issue:
-```
-systemctl stop throttled.service
-systemctl disable throttled.service
-```
-
-If you're running runit instead of systemd:
-```
-sv down throttled
-rm /var/service/throttled
-```
-
-If you're using OpenRC instead of systemd:
-```
-rc-service throttled stop
-rc-update del throttled default
-```
-
-If you also need to remove the tool from the system:
-```
-rm -rf /opt/throttled /etc/systemd/system/throttled.service
-# to purge also the config file
-rm /etc/throttled.conf
-```
-On Arch you should probably use `pacman -R lenovo-throttling-fix-git` instead.
-
-### Update
-If you update the tool you should manually check your config file for changes or additional features and modify it accordingly. The update process is then as simple as:
-```
-cd throttled
-git pull
-sudo ./install.sh
-sudo systemctl restart throttled.service
-OpenRC: sudo rc-service throttled restart
-```
-
-## Configuration
-The configuration has moved to `/etc/throttled.conf`. The install script does not overwrite your previous config file, so you need to manually check for differences in config file structure when updating the tool. If you want to overwrite the config with new defaults just issue `sudo cp etc/throttled.conf /etc`. There exist two profiles `AC` and `BATTERY` and the tool can be totally disabled by setting `Enabled: False` in the `GENERAL` section. Undervolt is applied if any voltage plane in the config file (section UNDERVOLT) was set. Notice that the offset is in *mV* and only undervolting (*i.e.* negative values) is supported.
-All fields accept floating point values as well as integers.
-
-My T480s with i7-8550u is stable with:
-```
-[UNDERVOLT]
-# CPU core voltage offset (mV)
-CORE: -105
-# Integrated GPU voltage offset (mV)
-GPU: -85
-# CPU cache voltage offset (mV)
-CACHE: -105
-# System Agent voltage offset (mV)
-UNCORE: -85
-# Analog I/O voltage offset (mV)
-ANALOGIO: 0
-```
-**IMPORTANT:** Please notice that *my* system is stable with these values. Your notebook might crash even with slight undervolting! You should test your system and slowly increasing undervolt to find the maximum stable value for your CPU. You can check [this](https://www.notebookcheck.net/Intel-Extreme-Tuning-Utility-XTU-Undervolting-Guide.272120.0.html) tutorial if you don't know where to start.
-
-## Monitoring
-With the flag `--monitor` the tool *constantly* monitors the throttling status, indicating the cause among thermal limit, power limit, current limit or cross-origin. The last cause is often related to an external event (e.g. by the GPU). The update rate can be adjusted and defaults to 1 second. Example output:
-```
-./throttled.py --monitor
-[I] Detected CPU architecture: Intel Kaby Lake (R)
-[I] Loading config file.
-[I] Starting main loop.
-[D] Undervolt offsets: CORE: -105.00 mV | GPU: -85.00 mV | CACHE: -105.00 mV | UNCORE: -85.00 mV | ANALOGIO: 0.00 mV
-[D] IccMax: CORE: 64.00 A | GPU: 31.00 A | CACHE: 6.00 A
-[D] Realtime monitoring of throttling causes:
-
-[AC] Thermal: OK - Power: OK - Current: OK - Cross-domain (e.g. GPU): OK  ||  VCore: 549 mV - Package: 2.6 W - Graphics: 0.4 W - DRAM: 1.2 W
-```
-
-## Static Fix
-You can alternatively set the power limits using intel_rapl driver (modifying MCHBAR values requires [Linux 5.3+](https://git.kernel.org/pub/scm/linux/kernel/git/rzhang/linux.git/commit/drivers/thermal/intel/int340x_thermal/processor_thermal_device.c?h=for-5.4&id=555c45fe0d04bd817e245a125d242b6a86af4593)). Bear in mind, some embedded controllers (EC) control the power limit values and will reset them from time to time):
-```
-# MSR
-# PL1
-echo 44000000 | sudo tee /sys/devices/virtual/powercap/intel-rapl/intel-rapl:0/constraint_0_power_limit_uw # 44 watt
-echo 28000000 | sudo tee /sys/devices/virtual/powercap/intel-rapl/intel-rapl:0/constraint_0_time_window_us # 28 sec
-# PL2
-echo 44000000 | sudo tee /sys/devices/virtual/powercap/intel-rapl/intel-rapl:0/constraint_1_power_limit_uw # 44 watt
-echo 2440 | sudo tee /sys/devices/virtual/powercap/intel-rapl/intel-rapl:0/constraint_1_time_window_us # 0.00244 sec
-
-# MCHBAR
-# PL1
-echo 44000000 | sudo tee /sys/devices/virtual/powercap/intel-rapl-mmio/intel-rapl-mmio:0/constraint_0_power_limit_uw # 44 watt
-# ^ Only required change on a ASUS Zenbook UX430UNR
-echo 28000000 | sudo tee /sys/devices/virtual/powercap/intel-rapl-mmio/intel-rapl-mmio:0/constraint_0_time_window_us # 28 sec
-# PL2
-echo 44000000 | sudo tee /sys/devices/virtual/powercap/intel-rapl-mmio/intel-rapl-mmio:0/constraint_1_power_limit_uw # 44 watt
-echo 2440 | sudo tee /sys/devices/virtual/powercap/intel-rapl-mmio/intel-rapl-mmio:0/constraint_1_time_window_us # 0.00244 sec
-```
-If you want to change the values automatically on boot you can use [systemd-tmpfiles](https://www.freedesktop.org/software/systemd/man/tmpfiles.d.html):
-```
-# /etc/tmpfiles.d/power_limit.conf
-# MSR
-# PL1
-w /sys/devices/virtual/powercap/intel-rapl/intel-rapl:0/constraint_0_power_limit_uw - - - - 44000000
-w /sys/devices/virtual/powercap/intel-rapl/intel-rapl:0/constraint_0_time_window_us - - - - 28000000
-# PL2
-w /sys/devices/virtual/powercap/intel-rapl/intel-rapl:0/constraint_1_power_limit_uw - - - - 44000000
-w /sys/devices/virtual/powercap/intel-rapl/intel-rapl:0/constraint_1_time_window_us - - - - 2440
-
-# MCHBAR
-# PL1
-w /sys/devices/virtual/powercap/intel-rapl-mmio/intel-rapl-mmio:0/constraint_0_power_limit_uw - - - - 44000000
-# ^ Only required change on a ASUS Zenbook UX430UNR
-w /sys/devices/virtual/powercap/intel-rapl-mmio/intel-rapl-mmio:0/constraint_0_time_window_us - - - - 28000000
-# PL2
-w /sys/devices/virtual/powercap/intel-rapl-mmio/intel-rapl-mmio:0/constraint_1_power_limit_uw - - - - 44000000
-w /sys/devices/virtual/powercap/intel-rapl-mmio/intel-rapl-mmio:0/constraint_1_time_window_us - - - - 2440
-```
-
-## Debug
-You can enable the `--debug` option to read back written values and check if the tool is working properly. At startup it will also show the CPUs platform info which contains information about multiplier values and features present for this CPU. Additionally the tool will print the thermal status per core which is handy when it comes to figuring out the reason for CPU throttle. Status fields stands for the current throttle reason or condition and log shows if this was a throttle reason since the last interval.
-This is an example output:
-```
-./throttled.py --debug
-[D] cpu platform info: maximum non turbo ratio = 20
-[D] cpu platform info: maximum efficiency ratio = 4
-[D] cpu platform info: minimum operating ratio = 4
-[D] cpu platform info: feature ppin cap = 0
-[D] cpu platform info: feature programmable turbo ratio = 1
-[D] cpu platform info: feature programmable tdp limit = 1
-[D] cpu platform info: number of additional tdp profiles = 2
-[D] cpu platform info: feature programmable temperature target = 1
-[D] cpu platform info: feature low power mode = 1
-[D] TEMPERATURE_TARGET - write 0xf - read 0xf
-[D] Undervolt plane CORE - write 0xf2800000 - read 0xf2800000
-[D] Undervolt plane GPU - write 0xf5200000 - read 0xf5200000
-[D] Undervolt plane CACHE - write 0xf2800000 - read 0xf2800000
-[D] Undervolt plane UNCORE - write 0xf5200000 - read 0xf5200000
-[D] Undervolt plane ANALOGIO - write 0x0 - read 0x0
-[D] MSR PACKAGE_POWER_LIMIT - write 0xcc816000dc80e8 - read 0xcc816000dc80e8
-[D] MCHBAR PACKAGE_POWER_LIMIT - write 0xcc816000dc80e8 - read 0xcc816000dc80e8
-[D] TEMPERATURE_TARGET - write 0xf - read 0xf
-[D] core 0 thermal status: thermal throttle status = 0
-[D] core 0 thermal status: thermal throttle log = 1
-[D] core 0 thermal status: prochot or forcepr event = 0
-[D] core 0 thermal status: prochot or forcepr log = 0
-[D] core 0 thermal status: crit temp status = 0
-[D] core 0 thermal status: crit temp log = 0
-[D] core 0 thermal status: thermal threshold1 status = 0
-[D] core 0 thermal status: thermal threshold1 log = 1
-[D] core 0 thermal status: thermal threshold2 status = 0
-[D] core 0 thermal status: thermal threshold2 log = 1
-[D] core 0 thermal status: power limit status = 0
-[D] core 0 thermal status: power limit log = 1
-[D] core 0 thermal status: current limit status = 0
-[D] core 0 thermal status: current limit log = 0
-[D] core 0 thermal status: cross domain limit status = 0
-[D] core 0 thermal status: cross domain limit log = 0
-[D] core 0 thermal status: cpu temp = 44
-[D] core 0 thermal status: temp resolution = 1
-[D] core 0 thermal status: reading valid = 1
-.....
-```
-
-## Autoreload
-Auto reload config on changes (unless it's deleted) can be enabled/disabled in the config
-
-```
-[General]
-Autoreload = True
-```
-
-## A word about manufacturer provided tooling
-Tools provided by your notebook manufacturer like [Dell Power Manager](https://www.dell.com/support/contents/us/en/04/article/product-support/self-support-knowledgebase/software-and-downloads/dell-power-manager) tend to persist their settings to the system board. If you ever had it running under Windows and activated a cool/quiet/silent/saving profile, this setting will still be active when running linux, throttling your system.
-
-> On my Dell Latitude 5591, not even a BIOS reset to manufacturer default killed the active `Quiet` profile
-
-## Disclaimer
-This script overrides the default values set by Lenovo. I'm using it without any problem, but it is still experimental so use it at your own risk.
+`throttled` is available under the
+[MIT License](https://github.com/erpalma/throttled/blob/master/LICENSE).

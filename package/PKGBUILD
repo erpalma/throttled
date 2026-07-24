@@ -2,7 +2,7 @@
 pkgname=throttled
 pkgver=0.7
 pkgrel=4
-pkgdesc="Workaround for Intel throttling issues in Linux."
+pkgdesc="Linux daemon for Intel CPU power limits and firmware-induced throttling."
 arch=('any')
 url="https://github.com/erpalma/throttled"
 license=('MIT')

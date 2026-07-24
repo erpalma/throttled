@@ -4,7 +4,7 @@ umask 022
 
 PACKAGE=throttled
 ARCHITECTURE=all
-DESCRIPTION="Workaround for Intel throttling issues in Linux."
+DESCRIPTION="Linux daemon for Intel CPU power limits and firmware-induced throttling."
 DEPENDENCIES="python3 (>= 3.10), python3-dbus-fast, pciutils, kmod, upower, systemd"
 MAINTAINER="throttled maintainers <noreply@example.com>"
 OUTPUT_DIR=dist

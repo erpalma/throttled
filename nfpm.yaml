@@ -7,7 +7,7 @@ section: admin
 priority: optional
 maintainer: throttled maintainers <noreply@example.com>
 description: |-
-  Workaround for Intel throttling issues in Linux.
+  Linux daemon for Intel CPU power limits and firmware-induced throttling.
   throttled applies Intel CPU package power limits, temperature targets,
   undervolt, and related settings to work around firmware throttling issues.
 vendor: throttled maintainers
