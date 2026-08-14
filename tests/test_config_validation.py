@@ -53,6 +53,23 @@ class ConfigValidationTests(unittest.TestCase):
         self.assertEqual(config.getfloat('UNDERVOLT', 'CORE'), -50)
         self.assertEqual(config.getfloat('UNDERVOLT', 'CACHE', fallback=0.0), 0.0)
 
+    def test_load_config_removes_unencodable_undervolt_values(self):
+        throttled = load_throttled()
+        throttled.args.config = self.write_config(
+            '[GENERAL]\nEnabled: True\n'
+            '[AC]\nUpdate_Rate_s: 5\n'
+            '[UNDERVOLT]\nCORE: -1001\nCACHE: -1000\nGPU: nan\nUNCORE: -inf\nANALOGIO: 1\n'
+        )
+
+        with mock.patch.object(throttled, 'warning'):
+            config = throttled.load_config()
+
+        self.assertFalse(config.has_option('UNDERVOLT', 'CORE'))
+        self.assertEqual(config.getfloat('UNDERVOLT', 'CACHE'), -1000)
+        self.assertFalse(config.has_option('UNDERVOLT', 'GPU'))
+        self.assertFalse(config.has_option('UNDERVOLT', 'UNCORE'))
+        self.assertEqual(config.getfloat('UNDERVOLT', 'ANALOGIO'), 0)
+
     def test_load_config_rejects_iccmax_values_that_overflow_the_field(self):
         throttled = load_throttled()
         throttled.args.config = self.write_config(
