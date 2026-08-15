@@ -12,7 +12,7 @@ import sys
 import traceback
 from collections import defaultdict
 from datetime import datetime
-from errno import EACCES, EIO, EPERM
+from errno import EACCES, EIO, ENOENT, EPERM
 from platform import uname
 from subprocess import check_output, CalledProcessError, PIPE
 from threading import Event, Thread, current_thread, main_thread
@@ -254,8 +254,19 @@ def get_msr_list():
     return [f'/dev/cpu/{cpu:d}/msr' for cpu in get_cpu_list()]
 
 
-def _ensure_msr_module():
-    """Return MSR devices, loading the msr module if the devices are missing."""
+def _ensure_msr_module(cpu=None):
+    """Return all MSR devices, or the MSR device for CPU N, loading the module if needed."""
+    if cpu is not None:
+        target = f'/dev/cpu/{cpu:d}/msr'
+        if not os.path.exists(target) and not os.path.exists('/sys/module/msr'):
+            try:
+                subprocess.check_call(('modprobe', 'msr'))
+            except subprocess.CalledProcessError:
+                fatal('Unable to load the msr module.')
+        if not os.path.exists(target):
+            fatal(f'CPU {cpu:d} has no MSR device under /dev/cpu; it may have gone offline.')
+        return target
+
     msr_list = get_msr_list()
     if not msr_list or not os.path.exists(msr_list[0]):
         try:
@@ -268,10 +279,12 @@ def _ensure_msr_module():
     return msr_list
 
 
-def writemsr(msr, val):
-    """Write a 64-bit value to the named MSR on every online CPU."""
-    msr_list = _ensure_msr_module()
+def writemsr(msr, val, cpu=None):
+    """Write a 64-bit value to the named MSR on every online CPU or CPU N."""
+    if cpu is not None and cpu < 0:
+        fatal('Wrong writemsr cpu param')
     try:
+        msr_list = [_ensure_msr_module(cpu)] if cpu is not None else _ensure_msr_module()
         for addr in msr_list:
             f = os.open(addr, os.O_WRONLY)
             try:
@@ -282,6 +295,8 @@ def writemsr(msr, val):
     except (IOError, OSError) as e:
         if TESTMSR:
             raise e
+        if cpu is not None and e.errno == ENOENT:
+            fatal(f'CPU {cpu:d} went offline while writing MSR {msr} ({MSR_DICT[msr]:x}); aborting.')
         if e.errno == EPERM or e.errno == EACCES:
             fatal(
                 f'Unable to write to MSR {msr} ({MSR_DICT[msr]:x}). Check that the msr kernel module '
@@ -304,8 +319,8 @@ def readmsr(msr, from_bit=0, to_bit=63, cpu=None, flatten=False):
         fatal('Wrong readmsr cpu param')
     if from_bit > to_bit:
         fatal('Wrong readmsr bit params')
-    msr_list = _ensure_msr_module()
     try:
+        msr_list = [_ensure_msr_module(cpu)] if cpu is not None else _ensure_msr_module()
         output = []
         for addr in msr_list:
             f = os.open(addr, os.O_RDONLY)
@@ -320,14 +335,13 @@ def readmsr(msr, from_bit=0, to_bit=63, cpu=None, flatten=False):
                 warning(f'Found multiple values for {msr:s} ({MSR_DICT[msr]:x}). This should never happen.')
             return output[0]
         if cpu is not None:
-            target = f'/dev/cpu/{cpu:d}/msr'
-            if target not in msr_list:
-                fatal(f'CPU {cpu:d} has no MSR device under /dev/cpu.')
-            return output[msr_list.index(target)]
+            return output[0]
         return output
     except (IOError, OSError) as e:
         if TESTMSR:
             raise e
+        if cpu is not None and e.errno == ENOENT:
+            fatal(f'CPU {cpu:d} went offline while reading MSR {msr} ({MSR_DICT[msr]:x}); aborting.')
         if e.errno == EPERM or e.errno == EACCES:
             fatal(
                 f'Unable to read from MSR {msr} ({MSR_DICT[msr]:x}). Check that the msr kernel module '
@@ -830,16 +844,19 @@ def set_hwp(performance_mode):
     """Set the IA32_HWP_REQUEST energy/performance preference field."""
     if performance_mode not in (True, False) or 'HWP' in UNSUPPORTED_FEATURES:
         return
-    # set HWP energy performance preference
-    cur_val = readmsr('IA32_HWP_REQUEST', cpu=0)
     hwp_mode = HWP_PERFORMANCE_VALUE if performance_mode is True else HWP_DEFAULT_VALUE
-    new_val = (cur_val & 0xFFFFFFFF00FFFFFF) | (hwp_mode << 24)
-
-    writemsr('IA32_HWP_REQUEST', new_val)
-    if args.debug:
-        read_value = readmsr('IA32_HWP_REQUEST', from_bit=24, to_bit=31)[0]
-        match = OK if hwp_mode == read_value else ERR
-        log(f'[D] HWP - write "{hwp_mode:#02x}" - read "{read_value:#02x}" - match {match}')
+    # Take one online-CPU snapshot, then use direct per-CPU RMW operations.
+    # A CPU that disappears after the snapshot is fatal rather than allowing a
+    # broadcast write or applying a value read from another logical CPU.
+    for addr in _ensure_msr_module():
+        cpu = int(os.path.basename(os.path.dirname(addr)))
+        cur_val = readmsr('IA32_HWP_REQUEST', cpu=cpu)
+        new_val = (cur_val & 0xFFFFFFFF00FFFFFF) | (hwp_mode << 24)
+        writemsr('IA32_HWP_REQUEST', new_val, cpu=cpu)
+        if args.debug:
+            read_value = readmsr('IA32_HWP_REQUEST', from_bit=24, to_bit=31, cpu=cpu)
+            match = OK if hwp_mode == read_value else ERR
+            log(f'[D] HWP CPU {cpu:d} - write "{hwp_mode:#02x}" - read "{read_value:#02x}" - match {match}')
 
 
 def set_disable_bdprochot():
@@ -1113,8 +1130,11 @@ def test_msr_rw_capabilities():
 
         try:
             log('[I] Testing if HWP is supported...')
+            # This is a startup feature probe, so CPU 0 is intentionally used
+            # as the representative CPU. set_hwp() later preserves each
+            # logical CPU's independent request with per-CPU RMW writes.
             cur_val = readmsr('IA32_HWP_REQUEST', cpu=0)
-            writemsr('IA32_HWP_REQUEST', cur_val)
+            writemsr('IA32_HWP_REQUEST', cur_val, cpu=0)
         except (IOError, OSError):
             warning('HWP seems not to be supported by your system, disabling.')
             UNSUPPORTED_FEATURES.append('HWP')

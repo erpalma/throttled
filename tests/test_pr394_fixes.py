@@ -70,12 +70,19 @@ class PR394FixTests(unittest.TestCase):
         throttled = load_throttled()
         throttled.cpu_count = lambda: 2
 
-        with mock.patch.object(throttled, '_ensure_msr_module', return_value=['/dev/cpu/0/msr', '/dev/cpu/2/msr']):
-            with mock.patch.object(throttled.os, 'open', side_effect=[10, 20]):
-                with mock.patch.object(throttled.os, 'read', side_effect=[struct.pack('Q', 11), struct.pack('Q', 22)]):
+        def ensure_msr_module(cpu=None):
+            if cpu is None:
+                return ['/dev/cpu/0/msr', '/dev/cpu/2/msr']
+            return f'/dev/cpu/{cpu:d}/msr'
+
+        with mock.patch.object(throttled, '_ensure_msr_module', side_effect=ensure_msr_module):
+            with mock.patch.object(throttled.os, 'open', return_value=20) as open_:
+                with mock.patch.object(throttled.os, 'read', return_value=struct.pack('Q', 22)):
                     with mock.patch.object(throttled.os, 'lseek'):
                         with mock.patch.object(throttled.os, 'close'):
                             self.assertEqual(throttled.readmsr('MSR_PLATFORM_INFO', cpu=2), 22)
+
+        open_.assert_called_once_with('/dev/cpu/2/msr', throttled.os.O_RDONLY)
 
     def test_thermal_status_uses_values_read_from_available_msr_devices(self):
         throttled = load_throttled()
