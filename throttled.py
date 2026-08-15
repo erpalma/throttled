@@ -1253,8 +1253,11 @@ def monitor(exit_event, wait):
         'DRAM': (readmsr('MSR_DRAM_ENERGY_STATUS', cpu=0) * rapl_power_unit, time()),
     }
 
-    undervolt_values = get_undervolt(convert=True)
-    undervolt_output = ' | '.join(f'{plane:s}: {undervolt_values[plane]:.2f} mV' for plane in VOLTAGE_PLANES)
+    if 'UNDERVOLT' in UNSUPPORTED_FEATURES:
+        undervolt_output = 'N/A (unsupported)'
+    else:
+        undervolt_values = get_undervolt(convert=True)
+        undervolt_output = ' | '.join(f'{plane:s}: {undervolt_values[plane]:.2f} mV' for plane in VOLTAGE_PLANES)
     log(f'[D] Undervolt offsets: {undervolt_output:s}')
 
     iccmax_values = get_icc_max(convert=True)

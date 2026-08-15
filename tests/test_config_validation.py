@@ -179,6 +179,60 @@ class ConfigValidationTests(unittest.TestCase):
                 throttled.load_config()
 
         self.assertIn('must be a finite number', stderr.getvalue())
+    def test_monitor_reports_unsupported_undervolt_as_na(self):
+        throttled = load_throttled()
+        throttled.UNSUPPORTED_FEATURES.append('UNDERVOLT')
+
+        def readmsr(msr, *args, **kwargs):
+            if msr == 'MSR_RAPL_POWER_UNIT':
+                return 0
+            if msr in {
+                'MSR_INTEL_PKG_ENERGY_STATUS',
+                'MSR_PP1_ENERGY_STATUS',
+                'MSR_DRAM_ENERGY_STATUS',
+            }:
+                return 0
+            return 0
+
+        with mock.patch.object(throttled, 'readmsr', side_effect=readmsr):
+            with mock.patch.object(throttled, 'get_undervolt') as get_undervolt:
+                with mock.patch.object(
+                    throttled, 'get_icc_max', return_value=dict.fromkeys(throttled.CURRENT_PLANES, 0)
+                ):
+                    with mock.patch.object(throttled, 'log') as log:
+                        throttled.monitor(StopAfterWait(), 1)
+                        throttled.monitor(StopAfterWait(), 1)
+
+        get_undervolt.assert_not_called()
+        messages = [
+            call.args[0]
+            for call in log.call_args_list
+            if call.args[0].startswith('[D] Undervolt offsets:')
+        ]
+        self.assertEqual(messages, ['[D] Undervolt offsets: N/A (unsupported)'] * 2)
+
+    def test_monitor_keeps_supported_undervolt_output(self):
+        throttled = load_throttled()
+        undervolt = dict.fromkeys(throttled.VOLTAGE_PLANES, -50)
+
+        with mock.patch.object(throttled, 'readmsr', return_value=0):
+            with mock.patch.object(throttled, 'get_undervolt', return_value=undervolt):
+                with mock.patch.object(
+                    throttled, 'get_icc_max', return_value=dict.fromkeys(throttled.CURRENT_PLANES, 0)
+                ):
+                    with mock.patch.object(throttled, 'log') as log:
+                        throttled.monitor(StopAfterWait(), 1)
+
+        self.assertTrue(any('CORE: -50.00 mV' in call.args[0] for call in log.call_args_list))
+
+    def test_monitor_propagates_undervolt_read_errors(self):
+        throttled = load_throttled()
+        error = OSError('transient MSR read failure')
+
+        with mock.patch.object(throttled, 'readmsr', return_value=0):
+            with mock.patch.object(throttled, 'get_undervolt', side_effect=error):
+                with self.assertRaisesRegex(OSError, 'transient MSR read failure'):
+                    throttled.monitor(StopAfterWait(), 1)
 
 
 if __name__ == '__main__':
