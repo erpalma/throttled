@@ -32,6 +32,8 @@ DBUS_PROPERTIES_INTERFACE = 'org.freedesktop.DBus.Properties'
 VOLTAGE_PLANES = {'CORE': 0, 'GPU': 1, 'CACHE': 2, 'UNCORE': 3, 'ANALOGIO': 4}
 CURRENT_PLANES = {'CORE': 0, 'GPU': 1, 'CACHE': 2}
 TRIP_TEMP_RANGE = [40, 97]
+PKG_POWER_LIMIT_POWER_MASK = (1 << 15) - 1
+PKG_POWER_LIMIT_TIME_WINDOW_MASK = (1 << 7) - 1
 POWER_PROFILES = ('AC', 'BATTERY')
 UNDERVOLT_KEYS = ('UNDERVOLT', 'UNDERVOLT.AC', 'UNDERVOLT.BATTERY')
 ICCMAX_KEYS = ('ICCMAX', 'ICCMAX.AC', 'ICCMAX.BATTERY')
@@ -567,6 +569,30 @@ def calc_time_window_vars(t):
     raise ValueError('Unable to find a good combination!')
 
 
+def _encode_pkg_power_limit(pl1, tw1, pl2, tw2):
+    """Encode MSR_PKG_POWER_LIMIT fields without allowing adjacent-bit spill."""
+    fields = (
+        ('PL1', pl1, PKG_POWER_LIMIT_POWER_MASK),
+        ('TW1', tw1, PKG_POWER_LIMIT_TIME_WINDOW_MASK),
+        ('PL2', pl2, PKG_POWER_LIMIT_POWER_MASK),
+        ('TW2', tw2, PKG_POWER_LIMIT_TIME_WINDOW_MASK),
+    )
+    encoded = {}
+    for name, value, mask in fields:
+        if not isinstance(value, int) or not 0 <= value <= mask:
+            raise ValueError(f'{name:s} value {value!r} does not fit its {mask.bit_length():d}-bit field.')
+        encoded[name] = value
+    return (
+        encoded['PL1']
+        | (1 << 15)
+        | (1 << 16)
+        | (encoded['TW1'] << 17)
+        | (encoded['PL2'] << 32)
+        | (1 << 47)
+        | (encoded['TW2'] << 49)
+    )
+
+
 def _undervolt_offset_to_ticks(offset):
     """Convert an undervolt in mV to the signed 11-bit mailbox field."""
     try:
@@ -722,7 +748,16 @@ def load_config():
     # config values sanity check
     for power_source in power_profiles:
         for option in ('Update_Rate_s', 'PL1_Tdp_W', 'PL1_Duration_s', 'PL2_Tdp_W', 'PL2_Duration_S'):
-            value = config.getfloat(power_source, option, fallback=None)
+            try:
+                value = config.getfloat(power_source, option, fallback=None)
+                if value is not None and not math.isfinite(value):
+                    raise ValueError(value)
+            except ValueError:
+                if option == 'Update_Rate_s':
+                    fatal(f'The mandatory "Update_Rate_s" parameter in [{power_source:s}] must be a finite number.')
+                warning(f'Invalid "{option:s}" value in [{power_source:s}]; leaving it disabled.', oneshot=False)
+                config.remove_option(power_source, option)
+                value = None
             if value is not None:
                 config.set(power_source, option, str(max(0.001, value)))
             elif option == 'Update_Rate_s':
@@ -864,9 +899,10 @@ def calc_reg_values(platform_info, config):
                 Y, Z = calc_time_window_vars(PL2_Duration_s)
                 TW2 = Y | (Z << 5)
 
-            regs[power_source]['MSR_PKG_POWER_LIMIT'] = (
-                PL1 | (1 << 15) | (1 << 16) | (TW1 << 17) | (PL2 << 32) | (1 << 47) | (TW2 << 49)
-            )
+            try:
+                regs[power_source]['MSR_PKG_POWER_LIMIT'] = _encode_pkg_power_limit(PL1, TW1, PL2, TW2)
+            except ValueError as e:
+                fatal(f'Invalid package power limits in [{power_source:s}]: {e}')
         else:
             log(f'[I] {power_source:s} package power limits are disabled in config.')
 
