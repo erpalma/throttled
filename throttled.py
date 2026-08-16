@@ -390,8 +390,10 @@ def get_upower_on_battery():
 
 
 def is_on_battery(config):
-    """Return True if the system is on battery power; falls back to UPower
-    over D-Bus if the configured sysfs path is unreadable.
+    """Return True if the system is on battery power.
+
+    Every adapter matched by Sysfs_Power_Path is checked and any one online
+    means AC; falls back to UPower over D-Bus on unreadable paths.
     """
     paths = sorted(glob.glob(config.get('GENERAL', 'Sysfs_Power_Path', fallback=DEFAULT_SYSFS_POWER_PATH)))
     values = []
