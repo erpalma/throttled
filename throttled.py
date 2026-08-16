@@ -706,9 +706,7 @@ def load_config():
                     f'[!] Overriding invalid "Trip_Temp_C" value in "{power_source:s}": {trip_temp:.1f} -> {valid_trip_temp:.1f}'
                 )
 
-    # Validate the signed 11-bit undervolt field before any mailbox write.
-    # Positive offsets retain the historical behavior of being forced to zero;
-    # values below the representable minimum are removed instead of wrapping.
+    # the mailbox field is signed 11-bit: reject anything below -1000 mV instead of wrapping it positive
     for key in UNDERVOLT_KEYS:
         for plane in VOLTAGE_PLANES:
             if key in config:
@@ -719,7 +717,7 @@ def load_config():
                     if value > 0:
                         config.set(key, plane, '0')
                         log(
-                            f'[!] Overriding invalid "{key:s}" value in "{plane:s}" voltage plane: ' f'{value:.0f} -> 0'
+                            f'[!] Overriding invalid "{key:s}" value in "{plane:s}" voltage plane: {value:.0f} -> 0'
                         )
                     else:
                         _undervolt_offset_to_ticks(value)

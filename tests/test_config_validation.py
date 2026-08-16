@@ -61,7 +61,7 @@ class ConfigValidationTests(unittest.TestCase):
             '[UNDERVOLT]\nCORE: -1001\nCACHE: -1000\nGPU: nan\nUNCORE: -inf\nANALOGIO: 1\n'
         )
 
-        with mock.patch.object(throttled, 'warning'):
+        with mock.patch.object(throttled, 'warning'), mock.patch.object(throttled, 'log'):
             config = throttled.load_config()
 
         self.assertFalse(config.has_option('UNDERVOLT', 'CORE'))

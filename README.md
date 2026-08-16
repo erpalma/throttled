@@ -160,7 +160,8 @@ valid configuration changes automatically when `Autoreload` is enabled.
 ### Undervolting and IccMax
 
 Voltage offsets can be configured independently in `[UNDERVOLT.AC]` and
-`[UNDERVOLT.BATTERY]`. Only zero or negative millivolt values are accepted.
+`[UNDERVOLT.BATTERY]`. Only zero or negative millivolt values down to -1000 mV
+are accepted (the hardware field is signed 11-bit); anything below is rejected.
 Start at zero and test small changes under load; values stable on one CPU can
 crash another CPU of the same model.
 
