@@ -1254,15 +1254,17 @@ def monitor(exit_event, wait):
     }
 
     if 'UNDERVOLT' in UNSUPPORTED_FEATURES:
-        undervolt_output = 'N/A (unsupported)'
+        # both readers use the OC mailbox (MSR 0x150), so IccMax is unreadable too
+        log('[D] Undervolt offsets: unsupported')
+        log('[D] IccMax: unsupported')
     else:
         undervolt_values = get_undervolt(convert=True)
         undervolt_output = ' | '.join(f'{plane:s}: {undervolt_values[plane]:.2f} mV' for plane in VOLTAGE_PLANES)
-    log(f'[D] Undervolt offsets: {undervolt_output:s}')
+        log(f'[D] Undervolt offsets: {undervolt_output:s}')
 
-    iccmax_values = get_icc_max(convert=True)
-    iccmax_output = ' | '.join(f'{plane:s}: {iccmax_values[plane]:.2f} A' for plane in CURRENT_PLANES)
-    log(f'[D] IccMax: {iccmax_output:s}')
+        iccmax_values = get_icc_max(convert=True)
+        iccmax_output = ' | '.join(f'{plane:s}: {iccmax_values[plane]:.2f} A' for plane in CURRENT_PLANES)
+        log(f'[D] IccMax: {iccmax_output:s}')
 
     log('[D] Realtime monitoring of throttling causes:\n')
     while not exit_event.is_set():
