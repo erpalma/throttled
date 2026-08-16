@@ -845,9 +845,7 @@ def set_hwp(performance_mode):
     if performance_mode not in (True, False) or 'HWP' in UNSUPPORTED_FEATURES:
         return
     hwp_mode = HWP_PERFORMANCE_VALUE if performance_mode is True else HWP_DEFAULT_VALUE
-    # Take one online-CPU snapshot, then use direct per-CPU RMW operations.
-    # A CPU that disappears after the snapshot is fatal rather than allowing a
-    # broadcast write or applying a value read from another logical CPU.
+    # a CPU that disappears mid-loop is fatal rather than falling back to a broadcast write
     for addr in _ensure_msr_module():
         cpu = int(os.path.basename(os.path.dirname(addr)))
         cur_val = readmsr('IA32_HWP_REQUEST', cpu=cpu)
@@ -1130,9 +1128,6 @@ def test_msr_rw_capabilities():
 
         try:
             log('[I] Testing if HWP is supported...')
-            # This is a startup feature probe, so CPU 0 is intentionally used
-            # as the representative CPU. set_hwp() later preserves each
-            # logical CPU's independent request with per-CPU RMW writes.
             cur_val = readmsr('IA32_HWP_REQUEST', cpu=0)
             writemsr('IA32_HWP_REQUEST', cur_val, cpu=0)
         except (IOError, OSError):
