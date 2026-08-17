@@ -37,6 +37,18 @@ class MsrEncodingTests(unittest.TestCase):
             msr = throttled.calc_undervolt_msr('CORE', offset_mv)
             self.assertEqual(throttled.calc_undervolt_mv(msr & 0xFFFFFFFF), offset_mv)
 
+    def test_undervolt_encoder_rejects_values_outside_signed_eleven_bits(self):
+        throttled = load_throttled()
+
+        with self.assertRaisesRegex(ValueError, 'between -1000 and 0 mV'):
+            throttled.calc_undervolt_msr('CORE', -1001)
+        with self.assertRaisesRegex(ValueError, 'between -1000 and 0 mV'):
+            throttled.calc_undervolt_msr('CORE', 1)
+        for invalid in (float('nan'), float('inf'), float('-inf')):
+            with self.subTest(invalid=invalid):
+                with self.assertRaisesRegex(ValueError, 'between -1000 and 0 mV'):
+                    throttled.calc_undervolt_msr('CORE', invalid)
+
     def test_trip_offset_is_clamped_to_the_six_bit_msr_field(self):
         throttled = load_throttled()
         config = make_config(

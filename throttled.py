@@ -4,6 +4,7 @@ import asyncio
 import configparser
 import glob
 import gzip
+import math
 import os
 import re
 import struct
@@ -54,6 +55,9 @@ MSR_DICT = {
 HWP_PERFORMANCE_VALUE = 0x20
 HWP_DEFAULT_VALUE = 0x80
 HWP_INTERVAL = 60
+UNDERVOLT_TICKS_PER_MV = 1.024
+UNDERVOLT_MIN_TICKS = -(1 << 10)
+UNDERVOLT_MAX_TICKS = 0
 
 
 platform_info_bits = {
@@ -532,15 +536,30 @@ def calc_time_window_vars(t):
     raise ValueError('Unable to find a good combination!')
 
 
+def _undervolt_offset_to_ticks(offset):
+    """Convert an undervolt in mV to the signed 11-bit mailbox field."""
+    try:
+        offset = float(offset)
+    except (TypeError, ValueError) as e:
+        raise ValueError(f'Undervolt offset must be a number, got {offset!r}.') from e
+    minimum_mv = UNDERVOLT_MIN_TICKS / UNDERVOLT_TICKS_PER_MV
+    if not math.isfinite(offset) or not minimum_mv <= offset <= 0:
+        raise ValueError(f'Undervolt offset must be between {minimum_mv:g} and 0 mV, got {offset!r}.')
+    ticks = int(round(offset * UNDERVOLT_TICKS_PER_MV))
+    if not UNDERVOLT_MIN_TICKS <= ticks <= UNDERVOLT_MAX_TICKS:
+        raise ValueError(f'Undervolt offset {offset!r} mV does not fit the signed 11-bit mailbox field.')
+    return ticks
+
+
 def calc_undervolt_msr(plane, offset):
     """Return the value to be written in the MSR 150h for setting the given
     offset voltage (in mV) to the given voltage plane.
     """
-    assert offset <= 0
-    assert plane in VOLTAGE_PLANES
-    offset = int(round(offset * 1.024))
-    offset = 0xFFE00000 & ((offset & 0xFFF) << 21)
-    return 0x8000001100000000 | (VOLTAGE_PLANES[plane] << 40) | offset
+    if plane not in VOLTAGE_PLANES:
+        raise ValueError(f'Unknown voltage plane: {plane!r}.')
+    ticks = _undervolt_offset_to_ticks(offset)
+    encoded_offset = (ticks & 0x7FF) << 21
+    return 0x8000001100000000 | (VOLTAGE_PLANES[plane] << 40) | encoded_offset
 
 
 def calc_undervolt_mv(msr_value):
@@ -548,7 +567,7 @@ def calc_undervolt_mv(msr_value):
     offset = (msr_value & 0xFFE00000) >> 21
     # 11-bit two's complement: values >= 0x400 are negative
     offset = offset if offset < 0x400 else -(0x800 - offset)
-    return int(round(offset / 1.024))
+    return int(round(offset / UNDERVOLT_TICKS_PER_MV))
 
 
 def get_undervolt(plane=None, convert=False):
@@ -687,17 +706,24 @@ def load_config():
                     f'[!] Overriding invalid "Trip_Temp_C" value in "{power_source:s}": {trip_temp:.1f} -> {valid_trip_temp:.1f}'
                 )
 
-    # fix any invalid value (ie. > 0) in the undervolt settings
+    # the mailbox field is signed 11-bit: reject anything below -1000 mV instead of wrapping it positive
     for key in UNDERVOLT_KEYS:
         for plane in VOLTAGE_PLANES:
             if key in config:
-                value = config.getfloat(key, plane, fallback=0.0)
-                valid_value = min(0, value)
-                if value != valid_value:
-                    config.set(key, plane, str(valid_value))
-                    log(
-                        f'[!] Overriding invalid "{key:s}" value in "{plane:s}" voltage plane: {value:.0f} -> {valid_value:.0f}'
-                    )
+                try:
+                    value = config.getfloat(key, plane, fallback=0.0)
+                    if not math.isfinite(value):
+                        raise ValueError(f'Undervolt offset must be finite, got {value!r}.')
+                    if value > 0:
+                        config.set(key, plane, '0')
+                        log(
+                            f'[!] Overriding invalid "{key:s}" value in "{plane:s}" voltage plane: {value:.0f} -> 0'
+                        )
+                    else:
+                        _undervolt_offset_to_ticks(value)
+                except ValueError as e:
+                    warning(f'Invalid value for {plane:s} in {key:s}: {e}', oneshot=False)
+                    config.remove_option(key, plane)
 
     # handle the case where only one of UNDERVOLT.AC, UNDERVOLT.BATTERY keys exists
     # by forcing the other key to all zeros (ie. no undervolt)
