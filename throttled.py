@@ -15,7 +15,7 @@ from datetime import datetime
 from errno import EACCES, EIO, EPERM
 from platform import uname
 from subprocess import check_output, CalledProcessError, PIPE
-from threading import Event, Thread, current_thread, main_thread
+from threading import Event, Lock, Thread, current_thread, main_thread
 from time import time
 
 from mmio import MMIO, MMIOError
@@ -35,6 +35,8 @@ POWER_PROFILES = ('AC', 'BATTERY')
 UNDERVOLT_KEYS = ('UNDERVOLT', 'UNDERVOLT.AC', 'UNDERVOLT.BATTERY')
 ICCMAX_KEYS = ('ICCMAX', 'ICCMAX.AC', 'ICCMAX.BATTERY')
 power = {'source': None, 'method': 'polling'}
+# serializes config publication with the resume callback's read-then-write
+config_lock = Lock()
 MSR_DICT = {
     'MSR_PLATFORM_INFO': 0xCE,
     'MSR_OC_MAILBOX': 0x150,
@@ -421,10 +423,11 @@ def config_is_enabled(config):
 
 def handle_sleep_prepare(sleeping, config_or_state):
     if not sleeping:
-        config = _current_config(config_or_state)
-        if config_is_enabled(config):
-            undervolt(config)
-            set_icc_max(config)
+        with config_lock:
+            config = _current_config(config_or_state)
+            if config_is_enabled(config):
+                undervolt(config)
+                set_icc_max(config)
 
 
 def handle_ac_properties_changed(if_name, changed, invalidated):
@@ -953,7 +956,8 @@ def _power_thread(state, exit_event, cpuid):
             config_write_time = get_config_write_time()
             if config_write_time and last_config_write_time != config_write_time:
                 last_config_write_time = config_write_time
-                state['config'], state['regs'] = reload_config()
+                with config_lock:
+                    state['config'], state['regs'] = reload_config()
                 config, regs = state['config'], state['regs']
 
         # switch back to sysfs polling

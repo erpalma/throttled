@@ -3,6 +3,7 @@ import importlib.util
 import unittest
 from collections import defaultdict
 from pathlib import Path
+from threading import Thread
 from types import SimpleNamespace
 from unittest import mock
 
@@ -117,6 +118,51 @@ class EnabledBarrierTests(unittest.TestCase):
         writemsr.assert_not_called()
         undervolt.assert_not_called()
         thermal_status.assert_not_called()
+
+    def test_resume_callback_serializes_with_config_publication(self):
+        throttled = load_throttled()
+        state = {'config': make_config(enabled=True), 'regs': defaultdict(dict)}
+
+        with mock.patch.object(throttled, 'undervolt') as undervolt:
+            with mock.patch.object(throttled, 'set_icc_max') as set_icc_max:
+                with throttled.config_lock:
+                    resume = Thread(target=throttled.handle_sleep_prepare, args=(False, state))
+                    resume.start()
+                    # the callback must block on the lock instead of capturing the old config
+                    resume.join(timeout=0.2)
+                    self.assertTrue(resume.is_alive())
+                    undervolt.assert_not_called()
+                    state['config'] = make_config(enabled=False)
+                resume.join(timeout=5)
+
+        self.assertFalse(resume.is_alive())
+        undervolt.assert_not_called()
+        set_icc_max.assert_not_called()
+
+    def test_config_publication_happens_under_the_shared_lock(self):
+        throttled = load_throttled()
+        old_config = make_config(enabled=True, autoreload=True)
+        new_config = make_config(enabled=False, autoreload=True)
+        published = []
+
+        class PublishRecorder(dict):
+            def __setitem__(self, key, value):
+                published.append(throttled.config_lock.locked())
+                super().__setitem__(key, value)
+
+        state = PublishRecorder({'config': old_config, 'regs': defaultdict(dict)})
+
+        with mock.patch.object(throttled, 'read_mchbar_base', return_value=0):
+            with mock.patch.object(throttled, 'MMIO', side_effect=throttled.MMIOError):
+                with mock.patch.object(throttled, 'warning'):
+                    with mock.patch.object(throttled, 'get_config_write_time', side_effect=(1, 2)):
+                        with mock.patch.object(
+                            throttled, 'reload_config', return_value=(new_config, defaultdict(dict))
+                        ):
+                            throttled._power_thread(state, StopAfterWait(), (6, 158, 13))
+
+        self.assertEqual(published, [True, True])
+        self.assertIs(state['config'], new_config)
 
 
 if __name__ == '__main__':
