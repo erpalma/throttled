@@ -74,7 +74,8 @@ class ConfigValidationTests(unittest.TestCase):
     def test_load_config_rejects_iccmax_values_that_overflow_the_field(self):
         throttled = load_throttled()
         throttled.args.config = self.write_config(
-            '[GENERAL]\nEnabled: True\n[AC]\nUpdate_Rate_s: 5\n[ICCMAX.AC]\nCORE: 300\nGPU: 100\n'
+            '[GENERAL]\nEnabled: True\n[AC]\nUpdate_Rate_s: 5\n'
+            '[ICCMAX.AC]\nCORE: 300\nGPU: 100\nCACHE: nan\n[ICCMAX.BATTERY]\nCORE: 0.1\n'
         )
 
         with mock.patch.object(throttled, 'warning'):
@@ -82,6 +83,8 @@ class ConfigValidationTests(unittest.TestCase):
 
         self.assertFalse(config.has_option('ICCMAX.AC', 'CORE'))
         self.assertEqual(config.getfloat('ICCMAX.AC', 'GPU'), 100)
+        self.assertFalse(config.has_option('ICCMAX.AC', 'CACHE'))
+        self.assertFalse(config.has_option('ICCMAX.BATTERY', 'CORE'))
 
     def test_mchbar_probe_keeps_setpci_stderr_out_of_the_journal(self):
         throttled = load_throttled()

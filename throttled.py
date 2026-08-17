@@ -62,6 +62,8 @@ HWP_INTERVAL = 60
 UNDERVOLT_TICKS_PER_MV = 1.024
 UNDERVOLT_MIN_TICKS = -(1 << 10)
 UNDERVOLT_MAX_TICKS = 0
+ICCMAX_STEPS_PER_A = 4
+ICCMAX_MAX_FIELD = 0x3FF
 
 
 platform_info_bits = {
@@ -670,15 +672,28 @@ def undervolt(config, source=None):
             )
 
 
+def _icc_max_to_field(current):
+    """Convert an IccMax in A to the unsigned 10-bit quarter-ampere field."""
+    try:
+        current = float(current)
+    except (TypeError, ValueError) as e:
+        raise ValueError(f'IccMax must be a number, got {current!r}.') from e
+    maximum_a = ICCMAX_MAX_FIELD / ICCMAX_STEPS_PER_A
+    if not math.isfinite(current) or not 0 < current <= maximum_a:
+        raise ValueError(f'IccMax must be between 0 (exclusive) and {maximum_a:g} A, got {current!r}.')
+    field = int(round(current * ICCMAX_STEPS_PER_A))
+    if not 1 <= field <= ICCMAX_MAX_FIELD:
+        raise ValueError(f'IccMax {current!r} A rounds outside the unsigned 10-bit field.')
+    return field
+
+
 def calc_icc_max_msr(plane, current):
     """Return the value to be written in the MSR 150h for setting the given
     IccMax (in A) to the given current plane.
     """
-    # the MSR field is 10 bits of 1/4 A steps: max 0x3FF / 4 = 255.75 A
-    assert 0 < current <= 0x3FF / 4
-    assert plane in CURRENT_PLANES
-    current = int(round(current * 4))
-    return 0x8000001700000000 | (CURRENT_PLANES[plane] << 40) | current
+    if plane not in CURRENT_PLANES:
+        raise ValueError(f'Unknown current plane: {plane!r}.')
+    return 0x8000001700000000 | (CURRENT_PLANES[plane] << 40) | _icc_max_to_field(current)
 
 
 def calc_icc_max_amp(msr_value):
@@ -826,12 +841,10 @@ def load_config():
             if key in config:
                 try:
                     value = config.getfloat(key, plane)
-                    # the MSR field holds 10 bits of 1/4 A steps: max 255.75 A
-                    if value <= 0 or value > 0x3FF / 4:
-                        raise ValueError
+                    _icc_max_to_field(value)
                     iccmax_enabled = True
-                except ValueError:
-                    warning(f'Invalid value for {plane:s} in {key:s}', oneshot=False)
+                except ValueError as e:
+                    warning(f'Invalid value for {plane:s} in {key:s}: {e}', oneshot=False)
                     config.remove_option(key, plane)
                 except configparser.NoOptionError:
                     pass
