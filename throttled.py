@@ -408,15 +408,32 @@ def get_upower_on_battery():
 
 
 def is_on_battery(config):
-    """Return True if the system is on battery power; falls back to UPower
-    over D-Bus if the configured sysfs path is unreadable.
+    """Return True if the system is on battery power.
+
+    Every adapter matched by Sysfs_Power_Path is checked and any one online
+    means AC; falls back to UPower over D-Bus on unreadable paths.
     """
-    try:
-        for path in glob.glob(config.get('GENERAL', 'Sysfs_Power_Path', fallback=DEFAULT_SYSFS_POWER_PATH)):
+    paths = sorted(glob.glob(config.get('GENERAL', 'Sysfs_Power_Path', fallback=DEFAULT_SYSFS_POWER_PATH)))
+    values = []
+    errors = []
+    for path in paths:
+        try:
             with open(path) as f:
-                return not bool(int(f.read()))
-    except (IOError, OSError, ValueError) as e:
-        warning(f'Sysfs_Power_Path read failed ({e}). Trying upower method.')
+                value = int(f.read())
+            if value not in (0, 1):
+                raise ValueError(f'expected 0 or 1, got {value!r}')
+            values.append(value)
+        except (IOError, OSError, ValueError) as e:
+            errors.append(f'{path}: {e}')
+
+    if values and any(value == 1 for value in values):
+        if errors:
+            warning(f'Sysfs_Power_Path read failed for {len(errors)} path(s): {"; ".join(errors)}')
+        return False
+    if values and not errors:
+        return True
+    if errors:
+        warning(f'Sysfs_Power_Path read failed for {len(errors)} path(s): {"; ".join(errors)}. Trying upower method.')
     else:
         warning('No valid Sysfs_Power_Path found! Trying upower method')
     try:
