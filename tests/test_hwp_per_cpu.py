@@ -123,9 +123,10 @@ class HWPPerCpuTests(unittest.TestCase):
             return 0x1234
 
         with mock.patch.object(throttled, 'get_undervolt', return_value={'CORE': 0}):
-            with mock.patch.object(throttled, 'readmsr', side_effect=readmsr):
-                with mock.patch.object(throttled, 'writemsr') as writemsr:
-                    throttled.test_msr_rw_capabilities()
+            with mock.patch.object(throttled, 'get_icc_max', return_value={'CORE': 0}):
+                with mock.patch.object(throttled, 'readmsr', side_effect=readmsr):
+                    with mock.patch.object(throttled, 'writemsr') as writemsr:
+                        throttled.test_msr_rw_capabilities()
 
         writemsr.assert_called_once_with('IA32_HWP_REQUEST', 0x1234, cpu=0)
 
