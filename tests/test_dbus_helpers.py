@@ -31,19 +31,24 @@ class DBusHelperTests(unittest.TestCase):
 
     def test_resume_callback_reapplies_settings_only_after_wake(self):
         throttled = load_throttled()
+        config = throttled.configparser.ConfigParser()
+        config.add_section('GENERAL')
+        config.set('GENERAL', 'Enabled', 'True')
         calls = []
 
         with mock.patch.object(throttled, 'undervolt', lambda config: calls.append(('undervolt', config))):
             with mock.patch.object(throttled, 'set_icc_max', lambda config: calls.append(('iccmax', config))):
-                throttled.handle_sleep_prepare(True, 'config')
+                throttled.handle_sleep_prepare(True, config)
                 self.assertEqual(calls, [])
 
-                throttled.handle_sleep_prepare(False, 'config')
-                self.assertEqual(calls, [('undervolt', 'config'), ('iccmax', 'config')])
+                throttled.handle_sleep_prepare(False, config)
+                self.assertEqual(calls, [('undervolt', config), ('iccmax', config)])
 
     def test_dbus_resume_signal_enabled_when_undervolt_or_iccmax_configured(self):
         throttled = load_throttled()
         config = throttled.configparser.ConfigParser()
+        config.add_section('GENERAL')
+        config.set('GENERAL', 'Enabled', 'True')
         config.add_section('UNDERVOLT')
         config.set('UNDERVOLT', 'CORE', '-50')
 

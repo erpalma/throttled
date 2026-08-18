@@ -16,7 +16,7 @@ from datetime import datetime
 from errno import EACCES, EIO, ENOENT, EPERM
 from platform import uname
 from subprocess import check_output, CalledProcessError, PIPE
-from threading import Event, Thread, current_thread, main_thread
+from threading import Event, Lock, Thread, current_thread, main_thread
 from time import time
 
 from mmio import MMIO, MMIOError
@@ -36,6 +36,8 @@ POWER_PROFILES = ('AC', 'BATTERY')
 UNDERVOLT_KEYS = ('UNDERVOLT', 'UNDERVOLT.AC', 'UNDERVOLT.BATTERY')
 ICCMAX_KEYS = ('ICCMAX', 'ICCMAX.AC', 'ICCMAX.BATTERY')
 power = {'source': None, 'method': 'polling'}
+# serializes config publication with the resume callback's read-then-write
+config_lock = Lock()
 MSR_DICT = {
     'MSR_PLATFORM_INFO': 0xCE,
     'MSR_OC_MAILBOX': 0x150,
@@ -449,11 +451,18 @@ def _current_config(config_or_state):
     return config_or_state['config'] if isinstance(config_or_state, dict) else config_or_state
 
 
+def config_is_enabled(config):
+    """Return whether hardware changes are enabled in the loaded config."""
+    return config.getboolean('GENERAL', 'Enabled', fallback=False)
+
+
 def handle_sleep_prepare(sleeping, config_or_state):
     if not sleeping:
-        config = _current_config(config_or_state)
-        undervolt(config)
-        set_icc_max(config)
+        with config_lock:
+            config = _current_config(config_or_state)
+            if config_is_enabled(config):
+                undervolt(config)
+                set_icc_max(config)
 
 
 def handle_ac_properties_changed(if_name, changed, invalidated):
@@ -463,7 +472,7 @@ def handle_ac_properties_changed(if_name, changed, invalidated):
 
 
 def should_listen_for_resume(config):
-    return any(
+    return config_is_enabled(config) and any(
         config.getfloat(key, plane, fallback=0) != 0
         for keys, planes in ((UNDERVOLT_KEYS, VOLTAGE_PLANES), (ICCMAX_KEYS, CURRENT_PLANES))
         for key in keys
@@ -923,6 +932,9 @@ def get_config_write_time():
 def reload_config():
     """Re-read the config and re-apply undervolt, IccMax and HWP settings."""
     config = load_config()
+    if not config_is_enabled(config):
+        log('[I] Reloading changes.')
+        return config, defaultdict(dict)
     regs = calc_reg_values(get_cpu_platform_info(), config)
     undervolt(config)
     set_icc_max(config)
@@ -997,19 +1009,13 @@ def _power_thread(state, exit_event, cpuid):
         get_config_write_time() if config.getboolean('GENERAL', 'Autoreload', fallback=False) else None
     )
     while not exit_event.is_set():
-        # log thermal status
-        if args.debug:
-            thermal_status = get_reset_thermal_status()
-            for index, core_thermal_status in enumerate(thermal_status):
-                for key, value in core_thermal_status.items():
-                    log(f'[D] core {index} thermal status: {key.replace("_", " ")} = {value}')
-
         # Reload config on changes (unless it's deleted)
         if config.getboolean('GENERAL', 'Autoreload', fallback=False):
             config_write_time = get_config_write_time()
             if config_write_time and last_config_write_time != config_write_time:
                 last_config_write_time = config_write_time
-                state['config'], state['regs'] = reload_config()
+                with config_lock:
+                    state['config'], state['regs'] = reload_config()
                 config, regs = state['config'], state['regs']
 
         # switch back to sysfs polling
@@ -1019,6 +1025,20 @@ def _power_thread(state, exit_event, cpuid):
         # snapshot the power source once per iteration: the D-Bus callback can
         # flip it concurrently and every write below must agree on one profile
         power_source = power['source']
+
+        # Enabled=False is a hard write barrier, including the iteration that
+        # observes an enabled -> disabled autoreload transition.
+        if not config_is_enabled(config):
+            applied_source = power_source
+            exit_event.wait(get_update_rate(config, power_source))
+            continue
+
+        # log thermal status
+        if args.debug:
+            thermal_status = get_reset_thermal_status()
+            for index, core_thermal_status in enumerate(thermal_status):
+                for key, value in core_thermal_status.items():
+                    log(f'[D] core {index} thermal status: {key.replace("_", " ")} = {value}')
 
         # re-apply the one-shot per-profile settings when the power source flips
         if power_source != applied_source:
@@ -1270,6 +1290,12 @@ def main():
             args.log = None
             fatal(f'Unable to write to the log file: {e}')
 
+    log('[I] Loading config file.')
+    config = load_config()
+    if not config_is_enabled(config):
+        log('[I] Throttled is disabled in config file... Quitting. :(')
+        return
+
     cpuid = None
     if not args.force:
         check_kernel()
@@ -1279,8 +1305,6 @@ def main():
 
     test_msr_rw_capabilities()
 
-    log('[I] Loading config file.')
-    config = load_config()
     power['source'] = 'BATTERY' if is_on_battery(config) else 'AC'
 
     platform_info = get_cpu_platform_info()
@@ -1288,10 +1312,6 @@ def main():
         for key, value in platform_info.items():
             log(f'[D] cpu platform info: {key.replace("_", " ")} = {value}')
     regs = calc_reg_values(platform_info, config)
-
-    if not config.getboolean('GENERAL', 'Enabled', fallback=False):
-        log('[I] Throttled is disabled in config file... Quitting. :(')
-        return
 
     undervolt(config)
     set_icc_max(config)

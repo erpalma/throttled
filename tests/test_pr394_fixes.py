@@ -24,6 +24,7 @@ def load_throttled():
 def make_config(autoreload=False, update_rate='0.001', trip_temp=None):
     config = __import__('configparser').ConfigParser()
     config.add_section('GENERAL')
+    config.set('GENERAL', 'Enabled', 'True')
     config.set('GENERAL', 'Autoreload', 'True' if autoreload else 'False')
     for section in ('AC', 'BATTERY'):
         config.add_section(section)
@@ -147,14 +148,15 @@ class PR394FixTests(unittest.TestCase):
 
     def test_sleep_callback_reads_current_config_from_state(self):
         throttled = load_throttled()
-        state = {'config': 'updated-config'}
+        updated_config = make_config()
+        state = {'config': updated_config}
         calls = []
 
         with mock.patch.object(throttled, 'undervolt', lambda config: calls.append(('undervolt', config))):
             with mock.patch.object(throttled, 'set_icc_max', lambda config: calls.append(('iccmax', config))):
                 throttled.handle_sleep_prepare(False, state)
 
-        self.assertEqual(calls, [('undervolt', 'updated-config'), ('iccmax', 'updated-config')])
+        self.assertEqual(calls, [('undervolt', updated_config), ('iccmax', updated_config)])
 
 
 if __name__ == '__main__':

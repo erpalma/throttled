@@ -44,9 +44,16 @@ class PowerSourceFlipTests(unittest.TestCase):
     def test_resume_listener_checks_the_planes_each_key_actually_supports(self):
         throttled = load_throttled()
 
-        self.assertFalse(throttled.should_listen_for_resume(make_config({'ICCMAX.AC': {'UNCORE': 200}})))
-        self.assertTrue(throttled.should_listen_for_resume(make_config({'ICCMAX.AC': {'CORE': 200}})))
-        self.assertTrue(throttled.should_listen_for_resume(make_config({'UNDERVOLT.AC': {'ANALOGIO': -50}})))
+        enabled = {'Enabled': True}
+        self.assertFalse(
+            throttled.should_listen_for_resume(make_config({'GENERAL': enabled, 'ICCMAX.AC': {'UNCORE': 200}}))
+        )
+        self.assertTrue(
+            throttled.should_listen_for_resume(make_config({'GENERAL': enabled, 'ICCMAX.AC': {'CORE': 200}}))
+        )
+        self.assertTrue(
+            throttled.should_listen_for_resume(make_config({'GENERAL': enabled, 'UNDERVOLT.AC': {'ANALOGIO': -50}}))
+        )
 
     def test_set_icc_max_honors_an_explicit_power_source(self):
         throttled = load_throttled()
@@ -77,7 +84,7 @@ class PowerSourceFlipTests(unittest.TestCase):
         throttled.power['method'] = 'polling'
         config = make_config(
             {
-                'GENERAL': {'Autoreload': 'False'},
+                'GENERAL': {'Enabled': 'True', 'Autoreload': 'False'},
                 'AC': {'Update_Rate_s': '5'},
                 'BATTERY': {'Update_Rate_s': '30'},
             }
