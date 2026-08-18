@@ -1,6 +1,8 @@
 import configparser
 import importlib.util
 import io
+import subprocess
+import sys
 import unittest
 from contextlib import redirect_stderr
 from pathlib import Path
@@ -74,7 +76,7 @@ class MsrEncodingTests(unittest.TestCase):
         throttled = load_throttled()
 
         self.assertEqual(throttled.calc_icc_max_msr('CORE', 0x3FF / 4) & 0x3FF, 0x3FF)
-        with self.assertRaises(AssertionError):
+        with self.assertRaises(ValueError):
             throttled.calc_icc_max_msr('CORE', 256)
 
     def test_package_power_limit_encoder_rejects_field_spill(self):
@@ -123,6 +125,31 @@ class MsrEncodingTests(unittest.TestCase):
                                 throttled.calc_reg_values(platform_info, config)
 
         self.assertIn('PL1', stderr.getvalue())
+
+    def test_icc_max_encoder_rejects_malformed_planes_and_currents(self):
+        throttled = load_throttled()
+
+        self.assertEqual(throttled.calc_icc_max_msr('CORE', 100) & 0x3FF, 400)
+        with self.assertRaisesRegex(ValueError, 'plane'):
+            throttled.calc_icc_max_msr('UNCORE', 100)
+        with self.assertRaisesRegex(ValueError, '10-bit'):
+            throttled.calc_icc_max_msr('CORE', 0.1)
+        for invalid in (0, -1, 255.76, float('nan'), float('inf'), 'abc'):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(ValueError):
+                    throttled.calc_icc_max_msr('CORE', invalid)
+
+    def test_icc_max_validation_survives_python_optimize(self):
+        code = (
+            'import throttled\n'
+            'try:\n'
+            '    throttled.calc_icc_max_msr("CORE", 256)\n'
+            'except ValueError:\n'
+            '    raise SystemExit(0)\n'
+            'raise SystemExit(1)\n'
+        )
+        result = subprocess.run([sys.executable, '-O', '-c', code], cwd=ROOT, capture_output=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
 
 
 if __name__ == '__main__':
