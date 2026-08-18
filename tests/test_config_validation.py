@@ -3,6 +3,7 @@ import io
 import os
 import tempfile
 import unittest
+from contextlib import redirect_stderr
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -151,6 +152,33 @@ class ConfigValidationTests(unittest.TestCase):
         output = next(call.args[0] for call in log.call_args_list if 'Package:' in call.args[0])
         self.assertIn('Package: 15.0 W', output)
         self.assertIn('Total: 35.0 W', output)
+
+    def test_load_config_disables_malformed_power_limits(self):
+        throttled = load_throttled()
+        throttled.args.config = self.write_config(
+            '[GENERAL]\nEnabled: True\n'
+            '[AC]\nUpdate_Rate_s: 5\nPL1_Tdp_W: inf\nPL2_Duration_s: nan\nPL2_Tdp_W: abc\nPL1_Duration_s: 1\n'
+        )
+
+        with mock.patch.object(throttled, 'warning'):
+            config = throttled.load_config()
+
+        self.assertFalse(config.has_option('AC', 'PL1_Tdp_W'))
+        self.assertFalse(config.has_option('AC', 'PL2_Duration_s'))
+        self.assertFalse(config.has_option('AC', 'PL2_Tdp_W'))
+        self.assertEqual(config.getfloat('AC', 'PL1_Duration_s'), 1)
+        self.assertEqual(config.getfloat('AC', 'Update_Rate_s'), 5)
+
+    def test_load_config_still_dies_on_a_nonfinite_update_rate(self):
+        throttled = load_throttled()
+        throttled.args.config = self.write_config('[GENERAL]\nEnabled: True\n[AC]\nUpdate_Rate_s: nan\n')
+        stderr = io.StringIO()
+
+        with redirect_stderr(stderr):
+            with self.assertRaises(SystemExit):
+                throttled.load_config()
+
+        self.assertIn('must be a finite number', stderr.getvalue())
 
 
 if __name__ == '__main__':

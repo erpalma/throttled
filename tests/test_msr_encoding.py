@@ -1,6 +1,8 @@
 import configparser
 import importlib.util
+import io
 import unittest
+from contextlib import redirect_stderr
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -74,6 +76,53 @@ class MsrEncodingTests(unittest.TestCase):
         self.assertEqual(throttled.calc_icc_max_msr('CORE', 0x3FF / 4) & 0x3FF, 0x3FF)
         with self.assertRaises(AssertionError):
             throttled.calc_icc_max_msr('CORE', 256)
+
+    def test_package_power_limit_encoder_rejects_field_spill(self):
+        throttled = load_throttled()
+
+        value = throttled._encode_pkg_power_limit(0x7FFF, 0x7F, 0x7FFF, 0x7F)
+        self.assertEqual(
+            value,
+            0x7FFF | (1 << 15) | (1 << 16) | (0x7F << 17) | (0x7FFF << 32) | (1 << 47) | (0x7F << 49),
+        )
+        with self.assertRaisesRegex(ValueError, 'PL1'):
+            throttled._encode_pkg_power_limit(0x8000, 0, 1, 0)
+        with self.assertRaisesRegex(ValueError, 'PL2'):
+            throttled._encode_pkg_power_limit(1, 0, 0x8000, 0)
+
+    def test_calculated_package_power_limit_rejects_unencodable_wattage(self):
+        throttled = load_throttled()
+        config = make_config(
+            {
+                'GENERAL': {'Enabled': 'True'},
+                'AC': {
+                    'Update_Rate_s': '5',
+                    'PL1_Tdp_W': str(0x8000),
+                    'PL1_Duration_s': '1',
+                    'PL2_Tdp_W': '20',
+                    'PL2_Duration_s': '1',
+                },
+            }
+        )
+        platform_info = {
+            'feature_programmable_temperature_target': 0,
+            'feature_programmable_tdp_limit': 0,
+        }
+
+        stderr = io.StringIO()
+        with mock.patch.object(throttled, 'get_power_unit', return_value=1):
+            with mock.patch.object(
+                throttled,
+                'get_cur_pkg_power_limits',
+                return_value={'PL1': 0, 'TW1': 0, 'PL2': 0, 'TW2': 0},
+            ):
+                with mock.patch.object(throttled, 'calc_time_window_vars', return_value=(0, 0)):
+                    with mock.patch.object(throttled, 'warning'):
+                        with redirect_stderr(stderr):
+                            with self.assertRaises(SystemExit):
+                                throttled.calc_reg_values(platform_info, config)
+
+        self.assertIn('PL1', stderr.getvalue())
 
 
 if __name__ == '__main__':
