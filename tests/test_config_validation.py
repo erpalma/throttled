@@ -180,6 +180,116 @@ class ConfigValidationTests(unittest.TestCase):
 
         self.assertIn('must be a finite number', stderr.getvalue())
 
+    def test_monitor_skips_only_the_undervolt_read_when_undervolt_is_unsupported(self):
+        throttled = load_throttled()
+        throttled.UNSUPPORTED_FEATURES.append('UNDERVOLT')
+
+        with mock.patch.object(throttled, 'readmsr', return_value=0):
+            with mock.patch.object(throttled, 'get_undervolt') as get_undervolt:
+                with mock.patch.object(
+                    throttled, 'get_icc_max', return_value=dict.fromkeys(throttled.CURRENT_PLANES, 0)
+                ) as get_icc_max:
+                    with mock.patch.object(throttled, 'log') as log:
+                        throttled.monitor(StopAfterWait(), 1)
+
+        get_undervolt.assert_not_called()
+        get_icc_max.assert_called_once_with(convert=True)
+        messages = [call.args[0] for call in log.call_args_list]
+        self.assertIn('[D] Undervolt offsets: unsupported', messages)
+        self.assertIn('[D] IccMax: CORE: 0.00 A | GPU: 0.00 A | CACHE: 0.00 A', messages)
+
+    def test_monitor_skips_only_the_iccmax_read_when_iccmax_is_unsupported(self):
+        throttled = load_throttled()
+        throttled.UNSUPPORTED_FEATURES.append('ICCMAX')
+
+        with mock.patch.object(throttled, 'readmsr', return_value=0):
+            with mock.patch.object(
+                throttled, 'get_undervolt', return_value=dict.fromkeys(throttled.VOLTAGE_PLANES, -50)
+            ) as get_undervolt:
+                with mock.patch.object(throttled, 'get_icc_max') as get_icc_max:
+                    with mock.patch.object(throttled, 'log') as log:
+                        throttled.monitor(StopAfterWait(), 1)
+
+        get_undervolt.assert_called_once_with(convert=True)
+        get_icc_max.assert_not_called()
+        messages = [call.args[0] for call in log.call_args_list]
+        self.assertIn('[D] IccMax: unsupported', messages)
+        self.assertTrue(any('CORE: -50.00 mV' in message for message in messages))
+
+    def test_monitor_skips_the_oc_mailbox_when_both_probes_fail(self):
+        throttled = load_throttled()
+        throttled.UNSUPPORTED_FEATURES.extend(('UNDERVOLT', 'ICCMAX'))
+
+        with mock.patch.object(throttled, 'readmsr', return_value=0):
+            with mock.patch.object(throttled, 'get_undervolt') as get_undervolt:
+                with mock.patch.object(throttled, 'get_icc_max') as get_icc_max:
+                    with mock.patch.object(throttled, 'log') as log:
+                        throttled.monitor(StopAfterWait(), 1)
+
+        get_undervolt.assert_not_called()
+        get_icc_max.assert_not_called()
+        messages = [call.args[0] for call in log.call_args_list]
+        self.assertIn('[D] Undervolt offsets: unsupported', messages)
+        self.assertIn('[D] IccMax: unsupported', messages)
+
+    def test_monitor_keeps_supported_undervolt_output(self):
+        throttled = load_throttled()
+        undervolt = dict.fromkeys(throttled.VOLTAGE_PLANES, -50)
+
+        with mock.patch.object(throttled, 'readmsr', return_value=0):
+            with mock.patch.object(throttled, 'get_undervolt', return_value=undervolt):
+                with mock.patch.object(
+                    throttled, 'get_icc_max', return_value=dict.fromkeys(throttled.CURRENT_PLANES, 0)
+                ):
+                    with mock.patch.object(throttled, 'log') as log:
+                        throttled.monitor(StopAfterWait(), 1)
+
+        self.assertTrue(any('CORE: -50.00 mV' in call.args[0] for call in log.call_args_list))
+
+    def test_probe_marks_only_undervolt_when_its_mailbox_command_fails(self):
+        throttled = load_throttled()
+
+        with mock.patch.object(throttled, 'get_undervolt', side_effect=OSError):
+            with mock.patch.object(
+                throttled, 'get_icc_max', return_value=dict.fromkeys(throttled.CURRENT_PLANES, 0)
+            ):
+                with mock.patch.object(throttled, 'readmsr', return_value=0):
+                    with mock.patch.object(throttled, 'writemsr'):
+                        with mock.patch.object(throttled, 'warning'):
+                            with mock.patch.object(throttled, 'log'):
+                                throttled.test_msr_rw_capabilities()
+
+        self.assertIn('UNDERVOLT', throttled.UNSUPPORTED_FEATURES)
+        self.assertNotIn('ICCMAX', throttled.UNSUPPORTED_FEATURES)
+
+    def test_probe_marks_only_iccmax_when_its_mailbox_command_fails(self):
+        throttled = load_throttled()
+
+        with mock.patch.object(
+            throttled, 'get_undervolt', return_value=dict.fromkeys(throttled.VOLTAGE_PLANES, 0)
+        ):
+            with mock.patch.object(throttled, 'get_icc_max', side_effect=OSError):
+                with mock.patch.object(throttled, 'readmsr', return_value=0):
+                    with mock.patch.object(throttled, 'writemsr'):
+                        with mock.patch.object(throttled, 'warning'):
+                            with mock.patch.object(throttled, 'log'):
+                                throttled.test_msr_rw_capabilities()
+
+        self.assertNotIn('UNDERVOLT', throttled.UNSUPPORTED_FEATURES)
+        self.assertIn('ICCMAX', throttled.UNSUPPORTED_FEATURES)
+
+    def test_set_icc_max_skips_the_mailbox_when_iccmax_is_unsupported(self):
+        throttled = load_throttled()
+        throttled.UNSUPPORTED_FEATURES.append('ICCMAX')
+        config = throttled.configparser.ConfigParser()
+        config.add_section('ICCMAX.AC')
+        config.set('ICCMAX.AC', 'CORE', '100')
+
+        with mock.patch.object(throttled, 'writemsr') as writemsr:
+            throttled.set_icc_max(config, source='AC')
+
+        writemsr.assert_not_called()
+
 
 if __name__ == '__main__':
     unittest.main()

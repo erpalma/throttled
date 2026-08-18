@@ -719,6 +719,8 @@ def get_icc_max(plane=None, convert=False):
 
 def set_icc_max(config, source=None):
     """Apply the IccMax limits from the config to all current planes."""
+    if 'ICCMAX' in UNSUPPORTED_FEATURES:
+        return
     source = source or power['source']
     section = f'ICCMAX.{source}'
     for plane in CURRENT_PLANES:
@@ -1214,7 +1216,7 @@ def check_cpu():
 
 
 def test_msr_rw_capabilities():
-    """Probe undervolt and HWP support; mark unavailable features as such."""
+    """Probe undervolt, IccMax and HWP support; mark unavailable features as such."""
     global TESTMSR
     TESTMSR = True
     try:
@@ -1224,6 +1226,13 @@ def test_msr_rw_capabilities():
         except (IOError, OSError):
             warning('Undervolt seems not to be supported by your system, disabling.')
             UNSUPPORTED_FEATURES.append('UNDERVOLT')
+
+        try:
+            log('[I] Testing if IccMax is supported...')
+            get_icc_max()
+        except (IOError, OSError):
+            warning('IccMax seems not to be supported by your system, disabling.')
+            UNSUPPORTED_FEATURES.append('ICCMAX')
 
         try:
             log('[I] Testing if HWP is supported...')
@@ -1253,13 +1262,19 @@ def monitor(exit_event, wait):
         'DRAM': (readmsr('MSR_DRAM_ENERGY_STATUS', cpu=0) * rapl_power_unit, time()),
     }
 
-    undervolt_values = get_undervolt(convert=True)
-    undervolt_output = ' | '.join(f'{plane:s}: {undervolt_values[plane]:.2f} mV' for plane in VOLTAGE_PLANES)
-    log(f'[D] Undervolt offsets: {undervolt_output:s}')
+    if 'UNDERVOLT' in UNSUPPORTED_FEATURES:
+        log('[D] Undervolt offsets: unsupported')
+    else:
+        undervolt_values = get_undervolt(convert=True)
+        undervolt_output = ' | '.join(f'{plane:s}: {undervolt_values[plane]:.2f} mV' for plane in VOLTAGE_PLANES)
+        log(f'[D] Undervolt offsets: {undervolt_output:s}')
 
-    iccmax_values = get_icc_max(convert=True)
-    iccmax_output = ' | '.join(f'{plane:s}: {iccmax_values[plane]:.2f} A' for plane in CURRENT_PLANES)
-    log(f'[D] IccMax: {iccmax_output:s}')
+    if 'ICCMAX' in UNSUPPORTED_FEATURES:
+        log('[D] IccMax: unsupported')
+    else:
+        iccmax_values = get_icc_max(convert=True)
+        iccmax_output = ' | '.join(f'{plane:s}: {iccmax_values[plane]:.2f} A' for plane in CURRENT_PLANES)
+        log(f'[D] IccMax: {iccmax_output:s}')
 
     log('[D] Realtime monitoring of throttling causes:\n')
     while not exit_event.is_set():
