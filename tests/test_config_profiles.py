@@ -90,7 +90,7 @@ class ConfigProfileTests(unittest.TestCase):
 
         with mock.patch.object(throttled, 'read_mchbar_base', return_value=0):
             with mock.patch.object(throttled, 'MMIO'):
-                throttled.power_thread(state, exit_event, None)
+                throttled.power_thread(state, exit_event)
 
         self.assertEqual(exit_event.timeout, 5.0)
 

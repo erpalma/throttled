@@ -98,7 +98,7 @@ class PowerSourceFlipTests(unittest.TestCase):
                     with mock.patch.object(throttled, 'undervolt', lambda config, source=None: calls.append(('undervolt', source))):
                         with mock.patch.object(throttled, 'set_icc_max', lambda config, source=None: calls.append(('iccmax', source))):
                             with mock.patch.object(throttled, 'log'):
-                                throttled.power_thread(state, StopAfterWait(), None)
+                                throttled.power_thread(state, StopAfterWait())
 
         self.assertEqual(calls, [('undervolt', 'AC'), ('iccmax', 'AC')])
         self.assertEqual(throttled.power['source'], 'AC')

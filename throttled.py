@@ -64,6 +64,17 @@ UNDERVOLT_MIN_TICKS = -(1 << 10)
 UNDERVOLT_MAX_TICKS = 0
 ICCMAX_STEPS_PER_A = 4
 ICCMAX_MAX_FIELD = 0x3FF
+MCHBAR_ENABLE_BIT = 1
+MCHBAR_PACKAGE_POWER_LIMIT_OFFSET = 0x59A0
+MCHBAR_PACKAGE_POWER_LIMIT_SIZE = 8
+PCI_HOST_BRIDGE_SYSFS_PATH = '/sys/bus/pci/devices/0000:00:00.0'
+PCI_VENDOR_ID_INTEL = 0x8086
+# The masked address bits also encode the per-generation window alignment, so
+# rejecting any bit outside the mask fully validates the BAR before /dev/mem
+# is ever opened.
+MCHBAR_ADDRESS_MASK_39_15 = ((1 << 39) - 1) & ~((1 << 15) - 1)
+MCHBAR_ADDRESS_MASK_39_17 = ((1 << 39) - 1) & ~((1 << 17) - 1)
+MCHBAR_ADDRESS_MASK_42_17 = ((1 << 42) - 1) & ~((1 << 17) - 1)
 
 
 platform_info_bits = {
@@ -193,6 +204,55 @@ supported_cpus = {
     (6, 189, 1): 'LunarLake',
     (6, 190, 0): 'AlderLake-N',
     (6, 198, 2): 'ArrowLake-HX',
+}
+
+# MCHBAR belongs to the PCI host bridge, not to a CPUID signature. This is a
+# deliberately narrow allowlist: an unlisted device remains MSR-only.
+#
+# TGL/ADL/RPL/Core Ultra datasheets document PACKAGE_RAPL_LIMIT_0_0_0_MCHBAR_PCU
+# at MCHBAR + 0x59a0 (Intel docs 631122, 767625/767626, 764981/767624, 795258,
+# 819323, 844345). Kaby and Coffee Lake do not publish the offset: those two
+# rest on coreboot's MCH_PKG_POWER_LIMIT_LO (the MSR 0x610 mirror) and a live
+# MMIO == MSR equality check on 0x3ec4. Groups follow Linux igen6/ie31200 EDAC.
+MCHBAR_ADDRESS_MASKS_BY_PCI_DEVICE = {
+    # Kaby Lake-U/R and Coffee Lake-H target systems (T480/T480s/X1C6, P53).
+    0x5914: MCHBAR_ADDRESS_MASK_39_15,
+    0x3EC4: MCHBAR_ADDRESS_MASK_39_15,
+    # Tiger Lake (Linux igen6 tgl_cfg).
+    0x9A14: MCHBAR_ADDRESS_MASK_39_17,
+    # Alder Lake (Linux igen6 adl_cfg).
+    0x4601: MCHBAR_ADDRESS_MASK_42_17,
+    0x4602: MCHBAR_ADDRESS_MASK_42_17,
+    0x4621: MCHBAR_ADDRESS_MASK_42_17,
+    0x4641: MCHBAR_ADDRESS_MASK_42_17,
+    # Alder/Raptor Lake S/HX (Linux ie31200 rpl_s_cfg).
+    0x4660: MCHBAR_ADDRESS_MASK_42_17,
+    0x4668: MCHBAR_ADDRESS_MASK_42_17,
+    0x4648: MCHBAR_ADDRESS_MASK_42_17,
+    0xA703: MCHBAR_ADDRESS_MASK_42_17,
+    0x4640: MCHBAR_ADDRESS_MASK_42_17,
+    0x4630: MCHBAR_ADDRESS_MASK_42_17,
+    0xA700: MCHBAR_ADDRESS_MASK_42_17,
+    0xA740: MCHBAR_ADDRESS_MASK_42_17,
+    0xA704: MCHBAR_ADDRESS_MASK_42_17,
+    0xA702: MCHBAR_ADDRESS_MASK_42_17,
+    # Raptor Lake-P (Linux igen6 rpl_p_cfg).
+    0xA706: MCHBAR_ADDRESS_MASK_42_17,
+    0xA707: MCHBAR_ADDRESS_MASK_42_17,
+    0xA708: MCHBAR_ADDRESS_MASK_42_17,
+    0xA716: MCHBAR_ADDRESS_MASK_42_17,
+    0xA718: MCHBAR_ADDRESS_MASK_42_17,
+    # Meteor Lake and Arrow Lake-U/H (Linux igen6 mtl_ps/mtl_p_cfg).
+    0x7D21: MCHBAR_ADDRESS_MASK_42_17,
+    0x7D22: MCHBAR_ADDRESS_MASK_42_17,
+    0x7D23: MCHBAR_ADDRESS_MASK_42_17,
+    0x7D24: MCHBAR_ADDRESS_MASK_42_17,
+    0x7D01: MCHBAR_ADDRESS_MASK_42_17,
+    0x7D02: MCHBAR_ADDRESS_MASK_42_17,
+    0x7D14: MCHBAR_ADDRESS_MASK_42_17,
+    0x7D06: MCHBAR_ADDRESS_MASK_42_17,
+    0x7D20: MCHBAR_ADDRESS_MASK_42_17,
+    0x7D30: MCHBAR_ADDRESS_MASK_42_17,
 }
 
 TESTMSR = False
@@ -994,48 +1054,89 @@ def reload_config():
     return config, regs
 
 
-def _read_mchbar_dword(method=None):
-    """Read MCHBAR PCI config register 0x48 for device 0:0.0."""
-    cmd = ['setpci', '-s', '0:0.0', '48.l']
+def _read_mchbar_dword(method=None, register='48.l'):
+    """Read one MCHBAR PCI config DWORD for device 0:0.0."""
+    cmd = ['setpci', '-s', '0000:00:00.0', register]
     if method:
         cmd[1:1] = ['-A', method]
     try:
         # capture stderr: a probe method is allowed to fail (e.g. the ECAM
         # region is not mappable under STRICT_DEVMEM) and its complaint must
         # not leak to the journal; read_mchbar_base() warns if all methods fail
-        return int(check_output(cmd, stderr=PIPE), 16)
+        raw_value = check_output(cmd, stderr=PIPE).strip()
+        if re.fullmatch(rb'[0-9a-fA-F]{8}', raw_value) is None:
+            return None
+        return int(raw_value, 16)
     except CalledProcessError as e:
         if args.debug:
-            err = e.stderr.decode(errors='replace').strip()
+            err = (e.stderr or b'').decode(errors='replace').strip()
             log(f'[D] MCHBAR - setpci {method or "default"} probe failed: {err}')
         return None
-    except (FileNotFoundError, ValueError):
+    except OSError:
         return None
 
 
-def read_mchbar_base(cpuid):
-    """Return the enabled MCHBAR base, falling back to a CPUID-based guess."""
+def _read_host_bridge_identity():
+    """Return the D0:F0 PCI vendor/device IDs from sysfs, or None."""
+    values = []
+    for attribute in ('vendor', 'device'):
+        try:
+            with open(os.path.join(PCI_HOST_BRIDGE_SYSFS_PATH, attribute), encoding='ascii') as attribute_file:
+                raw_value = attribute_file.read().strip()
+            if re.fullmatch(r'0x[0-9a-fA-F]{4}', raw_value) is None:
+                return None
+            values.append(int(raw_value[2:], 16))
+        except (OSError, UnicodeDecodeError):
+            return None
+    return tuple(values)
+
+
+def read_mchbar_base():
+    """Return a validated enabled 64-bit MCHBAR base, or None."""
+    identity = _read_host_bridge_identity()
+    if identity is None:
+        warning('Could not identify the PCI host bridge; disabling only MMIO package power-limit writes.')
+        return None
+
+    vendor_id, device_id = identity
+    if vendor_id != PCI_VENDOR_ID_INTEL:
+        warning(
+            f'PCI host bridge vendor {vendor_id:#06x} is not Intel; disabling only MMIO package power-limit writes.'
+        )
+        return None
+
+    address_mask = MCHBAR_ADDRESS_MASKS_BY_PCI_DEVICE.get(device_id)
+    if address_mask is None:
+        warning(
+            f'Unknown Intel PCI host bridge device {device_id:#06x}; '
+            f'disabling only MMIO package power-limit writes.'
+        )
+        return None
+
+    allowed_mask = address_mask | MCHBAR_ENABLE_BIT
     for method in ('ecam', None):
-        base = _read_mchbar_dword(method)
-        if base is not None and base not in (0, 0xFFFFFFFF) and base & 1:
+        low = _read_mchbar_dword(method, '48.l')
+        high = _read_mchbar_dword(method, '4c.l')
+        if low is None or high is None:
+            continue
+        mchbar = low | (high << 32)
+        if not mchbar & MCHBAR_ENABLE_BIT or mchbar & ~allowed_mask:
+            continue
+        base = mchbar & address_mask
+        if base != 0:
             return base
 
-    warning(
-        'Could not read a valid MCHBAR base via setpci. This is typically provided by the "pciutils" package.'
-    )
-    warning('Trying to guess the MCHBAR address from the CPUID. This MIGHT NOT WORK!')
-    if cpuid in ((6, 140, 1), (6, 140, 2), (6, 141, 1), (6, 151, 2), (6, 151, 5), (6, 154, 3), (6, 154, 4)):
-        return 0xFEDC0001
-    return 0xFED10001
+    warning('Could not read a valid enabled MCHBAR base via setpci; disabling only MMIO package power-limit writes.')
+    return None
 
 
-def power_thread(state, exit_event, cpuid):
+def power_thread(state, exit_event):
     """Crash-loud wrapper for _power_thread: an uncaught exception (or a
     sys.exit() from a helper) would only kill this thread, leaving a zombie
     daemon that looks healthy to systemd while no longer touching the hardware.
     """
     try:
-        _power_thread(state, exit_event, cpuid)
+        _power_thread(state, exit_event)
     except Exception:
         warning(f'power thread crashed:\n{traceback.format_exc()}', oneshot=False)
         if args.log:
@@ -1043,16 +1144,23 @@ def power_thread(state, exit_event, cpuid):
         os._exit(1)
 
 
-def _power_thread(state, exit_event, cpuid):
+def _power_thread(state, exit_event):
     """Daemon main loop: periodically (re-)apply throttling MSRs."""
     config, regs = state['config'], state['regs']
-    mchbar_base = read_mchbar_base(cpuid)
-    try:
-        mchbar_mmio = MMIO(mchbar_base + 0x599F, 8)
-    except MMIOError:
-        warning('Unable to open /dev/mem. TDP override might not work correctly.')
-        warning('Check CONFIG_DEVMEM=y and that kernel lockdown is disabled (CONFIG_IO_STRICT_DEVMEM can also block this region).')
-        mchbar_mmio = None
+    mchbar_base = read_mchbar_base()
+    mchbar_mmio = None
+    if mchbar_base is not None:
+        try:
+            mchbar_mmio = MMIO(
+                mchbar_base + MCHBAR_PACKAGE_POWER_LIMIT_OFFSET,
+                MCHBAR_PACKAGE_POWER_LIMIT_SIZE,
+            )
+        except MMIOError:
+            warning('Unable to open /dev/mem. MMIO package power-limit writes are disabled.')
+            warning(
+                'Check CONFIG_DEVMEM=y and that kernel lockdown is disabled '
+                '(CONFIG_IO_STRICT_DEVMEM can also block this region).'
+            )
 
     next_hwp_write = 0
     applied_source = power['source']
@@ -1132,13 +1240,17 @@ def _power_thread(state, exit_event, cpuid):
                 log(f'[D] MSR PACKAGE_POWER_LIMIT - write {write_value:#x} - read {read_value:#x} - match {match}')
             if mchbar_mmio is not None:
                 # set MCHBAR register to the same PL1/2 values
-                mchbar_mmio.write64(0, write_value)
-                if args.debug:
-                    read_value = mchbar_mmio.read64(0)
-                    match = OK if write_value == read_value else ERR
-                    log(
-                        f'[D] MCHBAR PACKAGE_POWER_LIMIT - write {write_value:#x} - read {read_value:#x} - match {match}'
-                    )
+                try:
+                    mchbar_mmio.write64(0, write_value)
+                    if args.debug:
+                        read_value = mchbar_mmio.read64(0)
+                        match = OK if write_value == read_value else ERR
+                        log(
+                            f'[D] MCHBAR PACKAGE_POWER_LIMIT - write {write_value:#x} - read {read_value:#x} - match {match}'
+                        )
+                except OSError as e:
+                    warning(f'Unable to write MCHBAR package power limits ({e}); disabling only MMIO writes.')
+                    mchbar_mmio = None
 
         # Disable BDPROCHOT
         disable_bdprochot = config.getboolean(power_source, 'Disable_BDPROCHOT', fallback=None)
@@ -1360,10 +1472,9 @@ def main():
         log('[I] Throttled is disabled in config file... Quitting. :(')
         return
 
-    cpuid = None
     if not args.force:
         check_kernel()
-        cpuid = check_cpu()
+        check_cpu()
 
     set_msr_allow_writes()
 
@@ -1384,7 +1495,7 @@ def main():
     state = {'config': config, 'regs': regs}
 
     exit_event = Event()
-    thread = Thread(target=power_thread, args=(state, exit_event, cpuid))
+    thread = Thread(target=power_thread, args=(state, exit_event))
     thread.daemon = True
     thread.start()
 
