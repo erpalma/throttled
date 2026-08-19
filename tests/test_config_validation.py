@@ -294,5 +294,21 @@ class ConfigValidationTests(unittest.TestCase):
         writemsr.assert_not_called()
 
 
+    def test_loader_warns_on_unknown_iccmax_plane_keys_but_not_default_keys(self):
+        throttled = load_throttled()
+        throttled.args.config = self.write_config(
+            '[DEFAULT]\nshared_default: 1\n[GENERAL]\nEnabled: True\n[AC]\nUpdate_Rate_s: 5\n'
+            '[ICCMAX.AC]\nCORE: 100\nCORF: 110\n'
+        )
+
+        with mock.patch.object(throttled, 'warning') as warning:
+            config = throttled.load_config()
+
+        messages = [call.args[0] for call in warning.call_args_list]
+        self.assertTrue(any('Unknown IccMax plane "corf"' in message for message in messages))
+        self.assertFalse(any('shared_default' in message for message in messages))
+        self.assertEqual(config.get('ICCMAX.AC', 'CORE'), '100')
+
+
 if __name__ == '__main__':
     unittest.main()
