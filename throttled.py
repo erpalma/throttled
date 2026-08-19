@@ -850,7 +850,23 @@ def load_config():
             elif option == 'Update_Rate_s':
                 fatal(f'The mandatory "Update_Rate_s" parameter is missing in the [{power_source:s}] profile.')
 
-        trip_temp = config.getfloat(power_source, 'Trip_Temp_C', fallback=None)
+        trip_temp = None
+        # a malformed profile value may mask a second malformed value inherited from [DEFAULT]
+        for _ in range(2):
+            try:
+                trip_temp = config.getfloat(power_source, 'Trip_Temp_C', fallback=None)
+                if trip_temp is None or math.isfinite(trip_temp):
+                    break
+                raise ValueError(trip_temp)
+            except (ValueError, configparser.InterpolationError):
+                trip_temp = None
+                if config.remove_option(power_source, 'Trip_Temp_C'):
+                    section = power_source
+                else:
+                    # the value is inherited from [DEFAULT]: drop it there or it survives the removal
+                    section = config.default_section
+                    config.remove_option(section, 'Trip_Temp_C')
+                warning(f'Invalid "Trip_Temp_C" value in [{section:s}]: ignoring it.', oneshot=False)
         if trip_temp is not None:
             valid_trip_temp = min(TRIP_TEMP_RANGE[1], max(TRIP_TEMP_RANGE[0], trip_temp))
             if trip_temp != valid_trip_temp:

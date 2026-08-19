@@ -309,6 +309,71 @@ class ConfigValidationTests(unittest.TestCase):
         self.assertFalse(any('shared_default' in message for message in messages))
         self.assertEqual(config.get('ICCMAX.AC', 'CORE'), '100')
 
+    def test_loader_removes_malformed_trip_temperatures(self):
+        throttled = load_throttled()
+        throttled.args.config = self.write_config(
+            '[GENERAL]\nEnabled: True\n'
+            '[AC]\nUpdate_Rate_s: 5\nTrip_Temp_C: warm\n[BATTERY]\nUpdate_Rate_s: 5\nTrip_Temp_C: nan\n'
+        )
+
+        with mock.patch.object(throttled, 'warning') as warning:
+            config = throttled.load_config()
+
+        self.assertFalse(config.has_option('AC', 'Trip_Temp_C'))
+        self.assertFalse(config.has_option('BATTERY', 'Trip_Temp_C'))
+        self.assertEqual(warning.call_count, 2)
+
+    def test_loader_removes_a_malformed_trip_temperature_inherited_from_default(self):
+        throttled = load_throttled()
+        throttled.args.config = self.write_config(
+            '[DEFAULT]\nTrip_Temp_C: warm\n[GENERAL]\nEnabled: True\n'
+            '[AC]\nUpdate_Rate_s: 5\n[BATTERY]\nUpdate_Rate_s: 5\n'
+        )
+
+        with mock.patch.object(throttled, 'warning') as warning:
+            config = throttled.load_config()
+
+        self.assertIsNone(config.getfloat('AC', 'Trip_Temp_C', fallback=None))
+        self.assertIsNone(config.getfloat('BATTERY', 'Trip_Temp_C', fallback=None))
+        warning.assert_called_once()
+        self.assertIn('[DEFAULT]', warning.call_args.args[0])
+
+    def test_loader_removes_a_default_trip_temperature_masked_by_a_malformed_profile_value(self):
+        throttled = load_throttled()
+        throttled.args.config = self.write_config(
+            '[DEFAULT]\nTrip_Temp_C: nan\n[GENERAL]\nEnabled: True\n[AC]\nUpdate_Rate_s: 5\nTrip_Temp_C: warm\n'
+        )
+
+        with mock.patch.object(throttled, 'warning') as warning:
+            config = throttled.load_config()
+
+        self.assertIsNone(config.getfloat('AC', 'Trip_Temp_C', fallback=None))
+        self.assertEqual(warning.call_count, 2)
+
+    def test_loader_removes_an_interpolation_breaking_trip_temperature(self):
+        throttled = load_throttled()
+        throttled.args.config = self.write_config(
+            '[GENERAL]\nEnabled: True\n[AC]\nUpdate_Rate_s: 5\nTrip_Temp_C: 95%\n'
+        )
+
+        with mock.patch.object(throttled, 'warning') as warning:
+            config = throttled.load_config()
+
+        self.assertIsNone(config.getfloat('AC', 'Trip_Temp_C', fallback=None))
+        warning.assert_called_once()
+
+    def test_loader_falls_back_to_a_valid_default_trip_temperature(self):
+        throttled = load_throttled()
+        throttled.args.config = self.write_config(
+            '[DEFAULT]\nTrip_Temp_C: 90\n[GENERAL]\nEnabled: True\n[AC]\nUpdate_Rate_s: 5\nTrip_Temp_C: warm\n'
+        )
+
+        with mock.patch.object(throttled, 'warning') as warning:
+            config = throttled.load_config()
+
+        self.assertEqual(config.getfloat('AC', 'Trip_Temp_C'), 90.0)
+        warning.assert_called_once()
+
 
 if __name__ == '__main__':
     unittest.main()
