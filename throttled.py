@@ -823,6 +823,14 @@ def set_icc_max(config, source=None):
             pass
 
 
+def _remove_config_option(config, section, option):
+    """Drop option from the layer holding it and return that layer's name."""
+    if config.remove_option(section, option):
+        return section
+    config.remove_option(config.default_section, option)
+    return config.default_section
+
+
 def load_config():
     """Parse the config file, validating and clamping out-of-range values."""
     config = configparser.ConfigParser()
@@ -835,23 +843,26 @@ def load_config():
     # config values sanity check
     for power_source in power_profiles:
         for option in ('Update_Rate_s', 'PL1_Tdp_W', 'PL1_Duration_s', 'PL2_Tdp_W', 'PL2_Duration_S'):
-            try:
-                value = config.getfloat(power_source, option, fallback=None)
-                if value is not None and not math.isfinite(value):
+            value = None
+            # a malformed profile value may mask a second malformed value inherited from [DEFAULT]
+            for _ in range(2):
+                try:
+                    value = config.getfloat(power_source, option, fallback=None)
+                    if value is None or math.isfinite(value):
+                        break
                     raise ValueError(value)
-            except ValueError:
-                if option == 'Update_Rate_s':
-                    fatal(f'The mandatory "Update_Rate_s" parameter in [{power_source:s}] must be a finite number.')
-                warning(f'Invalid "{option:s}" value in [{power_source:s}]; leaving it disabled.', oneshot=False)
-                config.remove_option(power_source, option)
-                value = None
+                except (ValueError, configparser.InterpolationError):
+                    value = None
+                    section = _remove_config_option(config, power_source, option)
+                    if option == 'Update_Rate_s':
+                        fatal(f'The mandatory "Update_Rate_s" parameter in [{section:s}] must be a finite number.')
+                    warning(f'Invalid "{option:s}" value in [{section:s}]: ignoring it.', oneshot=False)
             if value is not None:
                 config.set(power_source, option, str(max(0.001, value)))
             elif option == 'Update_Rate_s':
                 fatal(f'The mandatory "Update_Rate_s" parameter is missing in the [{power_source:s}] profile.')
 
         trip_temp = None
-        # a malformed profile value may mask a second malformed value inherited from [DEFAULT]
         for _ in range(2):
             try:
                 trip_temp = config.getfloat(power_source, 'Trip_Temp_C', fallback=None)
@@ -860,12 +871,7 @@ def load_config():
                 raise ValueError(trip_temp)
             except (ValueError, configparser.InterpolationError):
                 trip_temp = None
-                if config.remove_option(power_source, 'Trip_Temp_C'):
-                    section = power_source
-                else:
-                    # the value is inherited from [DEFAULT]: drop it there or it survives the removal
-                    section = config.default_section
-                    config.remove_option(section, 'Trip_Temp_C')
+                section = _remove_config_option(config, power_source, 'Trip_Temp_C')
                 warning(f'Invalid "Trip_Temp_C" value in [{section:s}]: ignoring it.', oneshot=False)
         if trip_temp is not None:
             valid_trip_temp = min(TRIP_TEMP_RANGE[1], max(TRIP_TEMP_RANGE[0], trip_temp))
@@ -875,34 +881,43 @@ def load_config():
                     f'[!] Overriding invalid "Trip_Temp_C" value in "{power_source:s}": {trip_temp:.1f} -> {valid_trip_temp:.1f}'
                 )
 
-    # the mailbox field is signed 11-bit: reject anything below -1000 mV instead of wrapping it positive
-    for key in UNDERVOLT_KEYS:
-        for plane in VOLTAGE_PLANES:
-            if key in config:
-                try:
-                    value = config.getfloat(key, plane, fallback=0.0)
-                    if not math.isfinite(value):
-                        raise ValueError(f'Undervolt offset must be finite, got {value!r}.')
-                    if value > 0:
-                        config.set(key, plane, '0')
-                        log(
-                            f'[!] Overriding invalid "{key:s}" value in "{plane:s}" voltage plane: {value:.0f} -> 0'
-                        )
-                    else:
-                        _undervolt_offset_to_ticks(value)
-                except ValueError as e:
-                    warning(f'Invalid value for {plane:s} in {key:s}: {e}', oneshot=False)
-                    config.remove_option(key, plane)
-
     # handle the case where only one of UNDERVOLT.AC, UNDERVOLT.BATTERY keys exists
-    # by forcing the other key to all zeros (ie. no undervolt)
+    # by forcing the other key to all zeros (ie. no undervolt); synthesizing it
+    # before the vetting below puts its [DEFAULT]-inherited planes through it too
     if any(key in config for key in UNDERVOLT_KEYS[1:]):
         for key in UNDERVOLT_KEYS[1:]:
             if key not in config:
                 config.add_section(key)
+
+    # the mailbox field is signed 11-bit: reject anything below -1000 mV instead of wrapping it positive
+    for key in UNDERVOLT_KEYS:
+        for plane in VOLTAGE_PLANES:
+            if key in config:
+                for _ in range(2):
+                    try:
+                        value = config.getfloat(key, plane, fallback=0.0)
+                        if not math.isfinite(value):
+                            raise ValueError(f'Undervolt offset must be finite, got {value!r}.')
+                        if value > 0:
+                            config.set(key, plane, '0')
+                            log(
+                                f'[!] Overriding invalid "{key:s}" value in "{plane:s}" voltage plane: {value:.0f} -> 0'
+                            )
+                        else:
+                            _undervolt_offset_to_ticks(value)
+                        break
+                    except (ValueError, configparser.InterpolationError) as e:
+                        section = key if config.remove_option(key, plane) else config.default_section
+                        warning(f'Invalid value for {plane:s} in [{section:s}]: {e}', oneshot=False)
+                        if section == config.default_section:
+                            # the plane names are shared with ICCMAX: shadow the inherited value, never touch [DEFAULT]
+                            config.set(key, plane, '0')
+                            break
+
+    for key in UNDERVOLT_KEYS[1:]:
+        if key in config:
             for plane in VOLTAGE_PLANES:
-                value = config.getfloat(key, plane, fallback=0.0)
-                config.set(key, plane, str(value))
+                config.set(key, plane, str(config.getfloat(key, plane, fallback=0.0)))
 
     # Check for CORE/CACHE values mismatch
     for key in UNDERVOLT_KEYS:
@@ -923,15 +938,21 @@ def load_config():
                 warning(f'Unknown IccMax plane "{option:s}" in [{key:s}]: ignoring it.', oneshot=False)
         for plane in CURRENT_PLANES:
             if key in config:
-                try:
-                    value = config.getfloat(key, plane)
-                    _icc_max_to_field(value)
-                    iccmax_enabled = True
-                except ValueError as e:
-                    warning(f'Invalid value for {plane:s} in {key:s}: {e}', oneshot=False)
-                    config.remove_option(key, plane)
-                except configparser.NoOptionError:
-                    pass
+                for _ in range(2):
+                    try:
+                        value = config.getfloat(key, plane)
+                        _icc_max_to_field(value)
+                        iccmax_enabled = True
+                        break
+                    except (ValueError, configparser.InterpolationError) as e:
+                        section = key if config.remove_option(key, plane) else config.default_section
+                        warning(f'Invalid value for {plane:s} in [{section:s}]: {e}', oneshot=False)
+                        if section == config.default_section:
+                            # the plane names are shared with UNDERVOLT: shadow the inherited value, never touch [DEFAULT]
+                            config.set(key, plane, '0')
+                            break
+                    except configparser.NoOptionError:
+                        break
     if iccmax_enabled:
         warning('Warning! Raising IccMax above design limits can damage your system!')
 
