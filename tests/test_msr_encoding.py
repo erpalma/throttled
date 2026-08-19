@@ -152,5 +152,16 @@ class MsrEncodingTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
 
 
+    def test_iccmax_encoder_floors_offgrid_values_to_the_configured_ceiling(self):
+        throttled = load_throttled()
+
+        # exact grid values encode unchanged
+        self.assertEqual(throttled.calc_icc_max_msr('CORE', 0.25) & 0x3FF, 1)
+        self.assertEqual(throttled.calc_icc_max_msr('CORE', 255.75) & 0x3FF, 0x3FF)
+        # off-grid values quantise DOWN, never above the configured ceiling
+        self.assertEqual(throttled.calc_icc_max_msr('CORE', 105.4) & 0x3FF, 421)
+        self.assertEqual(throttled.calc_icc_max_msr('CORE', 200.9) & 0x3FF, 803)
+
+
 if __name__ == '__main__':
     unittest.main()
