@@ -113,7 +113,7 @@ class EnabledBarrierTests(unittest.TestCase):
                                     with mock.patch.object(
                                         throttled, 'get_reset_thermal_status'
                                     ) as thermal_status:
-                                        throttled._power_thread(state, StopAfterWait(), (6, 158, 13))
+                                        throttled._power_thread(state, StopAfterWait())
 
         writemsr.assert_not_called()
         undervolt.assert_not_called()
@@ -159,7 +159,7 @@ class EnabledBarrierTests(unittest.TestCase):
                         with mock.patch.object(
                             throttled, 'reload_config', return_value=(new_config, defaultdict(dict))
                         ):
-                            throttled._power_thread(state, StopAfterWait(), (6, 158, 13))
+                            throttled._power_thread(state, StopAfterWait())
 
         self.assertEqual(published, [True, True])
         self.assertIs(state['config'], new_config)

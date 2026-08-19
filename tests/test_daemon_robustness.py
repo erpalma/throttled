@@ -52,7 +52,7 @@ class DaemonRobustnessTests(unittest.TestCase):
         with mock.patch.object(throttled, '_power_thread', side_effect=RuntimeError('boom')):
             with mock.patch.object(throttled.os, '_exit') as os_exit:
                 with mock.patch.object(throttled, 'warning'):
-                    throttled.power_thread({}, None, None)
+                    throttled.power_thread({}, None)
 
         os_exit.assert_called_once_with(1)
 
