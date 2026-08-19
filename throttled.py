@@ -741,9 +741,10 @@ def _icc_max_to_field(current):
     maximum_a = ICCMAX_MAX_FIELD / ICCMAX_STEPS_PER_A
     if not math.isfinite(current) or not 0 < current <= maximum_a:
         raise ValueError(f'IccMax must be between 0 (exclusive) and {maximum_a:g} A, got {current!r}.')
-    field = int(round(current * ICCMAX_STEPS_PER_A))
+    # floor: quantisation must never enforce a ceiling above the configured one
+    field = int(current * ICCMAX_STEPS_PER_A)
     if not 1 <= field <= ICCMAX_MAX_FIELD:
-        raise ValueError(f'IccMax {current!r} A rounds outside the unsigned 10-bit field.')
+        raise ValueError(f'IccMax {current!r} A quantises outside the unsigned 10-bit field.')
     return field
 
 
@@ -816,7 +817,7 @@ def set_icc_max(config, source=None):
                     read_current_A = calc_icc_max_amp(read_value)
                     match = OK if write_value == read_value else ERR
                     log(
-                        f'[D] IccMax plane {plane:s} - write {write_current_amp:.2f} A ({write_value:#x}) - read {read_current_A:.2f} A ({read_value:#x}) - match {match}'
+                        f'[D] IccMax plane {plane:s} - write {calc_icc_max_amp(write_value):.2f} A ({write_value:#x}) - read {read_current_A:.2f} A ({read_value:#x}) - match {match}'
                     )
         except (configparser.NoSectionError, configparser.NoOptionError):
             pass
