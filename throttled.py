@@ -897,6 +897,13 @@ def load_config():
     iccmax_enabled = False
     # check for invalid values (ie. <= 0 or > 0x3FF) in the IccMax settings
     for key in ICCMAX_KEYS:
+        if key not in config:
+            continue
+        for option in config[key]:
+            if option in config.defaults():
+                continue
+            if option.upper() not in CURRENT_PLANES:
+                warning(f'Unknown IccMax plane "{option:s}" in [{key:s}]: ignoring it.', oneshot=False)
         for plane in CURRENT_PLANES:
             if key in config:
                 try:
