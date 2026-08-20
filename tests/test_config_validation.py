@@ -374,6 +374,125 @@ class ConfigValidationTests(unittest.TestCase):
         self.assertEqual(config.getfloat('AC', 'Trip_Temp_C'), 90.0)
         warning.assert_called_once()
 
+    def test_loader_removes_malformed_power_limits_inherited_from_default(self):
+        throttled = load_throttled()
+        throttled.args.config = self.write_config(
+            '[DEFAULT]\nPL1_Tdp_W: hot\nPL2_Tdp_W: nan\n[GENERAL]\nEnabled: True\n[AC]\nUpdate_Rate_s: 5\n'
+        )
+
+        with mock.patch.object(throttled, 'warning') as warning:
+            config = throttled.load_config()
+
+        self.assertIsNone(config.getfloat('AC', 'PL1_Tdp_W', fallback=None))
+        self.assertIsNone(config.getfloat('AC', 'PL2_Tdp_W', fallback=None))
+        messages = [call.args[0] for call in warning.call_args_list]
+        self.assertEqual(len(messages), 2)
+        self.assertTrue(all('[DEFAULT]' in message for message in messages))
+
+    def test_loader_shadows_malformed_undervolt_planes_inherited_from_default(self):
+        throttled = load_throttled()
+        throttled.args.config = self.write_config(
+            '[DEFAULT]\nCORE: deep\n[GENERAL]\nEnabled: True\n[AC]\nUpdate_Rate_s: 5\n[UNDERVOLT.AC]\nCACHE: -50\n'
+        )
+
+        with mock.patch.object(throttled, 'warning') as warning:
+            config = throttled.load_config()
+
+        self.assertEqual(config.getfloat('UNDERVOLT.AC', 'CORE', fallback=0.0), 0.0)
+        self.assertEqual(config.getfloat('UNDERVOLT.AC', 'CACHE'), -50)
+        messages = [call.args[0] for call in warning.call_args_list]
+        self.assertTrue(any('[DEFAULT]' in message for message in messages))
+
+    def test_loader_shadows_malformed_iccmax_planes_inherited_from_default(self):
+        throttled = load_throttled()
+        throttled.args.config = self.write_config(
+            '[DEFAULT]\nCORE: lots\n[GENERAL]\nEnabled: True\n[AC]\nUpdate_Rate_s: 5\n[ICCMAX.AC]\nCACHE: 100\n'
+        )
+
+        with mock.patch.object(throttled, 'warning') as warning:
+            config = throttled.load_config()
+
+        self.assertEqual(config.getfloat('ICCMAX.AC', 'CORE'), 0.0)
+        messages = [call.args[0] for call in warning.call_args_list]
+        self.assertTrue(any('[DEFAULT]' in message for message in messages))
+
+        with mock.patch.object(throttled, 'writemsr') as writemsr:
+            throttled.set_icc_max(config, source='AC')
+
+        writemsr.assert_called_once()
+
+    def test_loader_vets_the_synthesized_undervolt_profile_against_default_planes(self):
+        throttled = load_throttled()
+        throttled.args.config = self.write_config(
+            '[DEFAULT]\nGPU: bogus\n[GENERAL]\nEnabled: True\n[AC]\nUpdate_Rate_s: 5\n[UNDERVOLT.AC]\nGPU: -50\n'
+        )
+
+        with mock.patch.object(throttled, 'warning'):
+            config = throttled.load_config()
+
+        self.assertEqual(config.getfloat('UNDERVOLT.AC', 'GPU'), -50)
+        self.assertEqual(config.getfloat('UNDERVOLT.BATTERY', 'GPU'), 0)
+
+    def test_loader_lets_the_synthesized_undervolt_profile_inherit_valid_defaults(self):
+        throttled = load_throttled()
+        throttled.args.config = self.write_config(
+            '[DEFAULT]\nCORE: -100\nCACHE: -100\n[GENERAL]\nEnabled: True\n[AC]\nUpdate_Rate_s: 5\n'
+            '[UNDERVOLT.AC]\nGPU: -50\n'
+        )
+
+        with mock.patch.object(throttled, 'warning'):
+            config = throttled.load_config()
+
+        self.assertEqual(config.getfloat('UNDERVOLT.BATTERY', 'CORE'), -100)
+        self.assertEqual(config.getfloat('UNDERVOLT.BATTERY', 'CACHE'), -100)
+        self.assertEqual(config.getfloat('UNDERVOLT.BATTERY', 'GPU'), 0)
+        self.assertEqual(config.getfloat('UNDERVOLT.AC', 'CORE'), -100)
+
+    def test_loader_removes_masked_power_limits_from_both_layers(self):
+        throttled = load_throttled()
+        throttled.args.config = self.write_config(
+            '[DEFAULT]\nPL1_Tdp_W: 45%\n[GENERAL]\nEnabled: True\n[AC]\nUpdate_Rate_s: 5\nPL1_Tdp_W: hot\n'
+        )
+
+        with mock.patch.object(throttled, 'warning') as warning:
+            config = throttled.load_config()
+
+        self.assertIsNone(config.getfloat('AC', 'PL1_Tdp_W', fallback=None))
+        messages = [call.args[0] for call in warning.call_args_list]
+        self.assertEqual(len(messages), 2)
+        self.assertIn('[AC]', messages[0])
+        self.assertIn('[DEFAULT]', messages[1])
+
+    def test_loader_shadows_a_default_plane_masked_by_a_malformed_own_value(self):
+        throttled = load_throttled()
+        throttled.args.config = self.write_config(
+            '[DEFAULT]\nCORE: junk\n[GENERAL]\nEnabled: True\n[AC]\nUpdate_Rate_s: 5\n[UNDERVOLT.AC]\nCORE: zzz\n'
+        )
+
+        with mock.patch.object(throttled, 'warning') as warning:
+            config = throttled.load_config()
+
+        self.assertEqual(config.getfloat('UNDERVOLT.AC', 'CORE'), 0.0)
+        self.assertEqual(config.getfloat('UNDERVOLT.BATTERY', 'CORE'), 0.0)
+        messages = [call.args[0] for call in warning.call_args_list]
+        self.assertTrue(any('[UNDERVOLT.AC]' in message for message in messages))
+        self.assertTrue(any('[DEFAULT]' in message for message in messages))
+
+    def test_loader_keeps_a_shared_default_undervolt_rejected_by_iccmax(self):
+        throttled = load_throttled()
+        throttled.args.config = self.write_config(
+            '[DEFAULT]\nCORE: -100\nCACHE: -100\n[GENERAL]\nEnabled: True\n[AC]\nUpdate_Rate_s: 5\n'
+            '[UNDERVOLT]\nGPU: -50\n[ICCMAX.AC]\nGPU: 100\n'
+        )
+
+        with mock.patch.object(throttled, 'warning'):
+            config = throttled.load_config()
+
+        self.assertEqual(config.getfloat('UNDERVOLT', 'CORE'), -100)
+        self.assertEqual(config.getfloat('UNDERVOLT', 'CACHE'), -100)
+        self.assertEqual(config.getfloat('ICCMAX.AC', 'CORE'), 0.0)
+        self.assertEqual(config.getfloat('ICCMAX.AC', 'GPU'), 100)
+
 
 if __name__ == '__main__':
     unittest.main()
