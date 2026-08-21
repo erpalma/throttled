@@ -97,6 +97,11 @@ class PackagingTests(unittest.TestCase):
         self.assertIn('--init NAME', result.stdout)
         self.assertIn('--no-start', result.stdout)
 
+    def test_source_installer_uses_python_from_path(self):
+        installer_lines = INSTALL_SCRIPT.read_text().splitlines()
+
+        self.assertIn('python3 -m venv "$INSTALL_DIR/venv"', installer_lines)
+
     def test_packaging_scripts_are_executable(self):
         scripts = [
             STAGE_SCRIPT,
