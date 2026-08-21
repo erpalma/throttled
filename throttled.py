@@ -1554,7 +1554,7 @@ def main():
 
     try:
         asyncio.run(run_dbus_loop(state))
-    except (KeyboardInterrupt, SystemExit):
+    except KeyboardInterrupt:
         pass
     finally:
         exit_event.set()
