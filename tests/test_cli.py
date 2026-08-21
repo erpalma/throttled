@@ -1,7 +1,7 @@
 import importlib.util
 import io
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 
 
@@ -41,6 +41,18 @@ class CLITests(unittest.TestCase):
 
         self.assertEqual(exit_context.exception.code, 0)
         self.assertTrue(output.getvalue().strip().endswith(f' {throttled.__version__}'))
+
+    def test_monitor_interval_must_be_finite_and_positive(self):
+        throttled = load_throttled()
+        parser = throttled.build_arg_parser()
+
+        for value in ('inf', 'nan', '0', '-1'):
+            with self.subTest(value=value), redirect_stderr(io.StringIO()):
+                with self.assertRaises(SystemExit) as exit_context:
+                    parser.parse_args(['--monitor', value])
+                self.assertEqual(exit_context.exception.code, 2)
+
+        self.assertEqual(parser.parse_args(['--monitor', '0.25']).monitor, 0.25)
 
 
 if __name__ == '__main__':
