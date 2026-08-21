@@ -574,7 +574,7 @@ async def setup_dbus_signal_handlers(config_or_state):
 async def run_dbus_loop(config_or_state):
     context = await setup_dbus_signal_handlers(config_or_state)
     try:
-        await asyncio.Future()
+        await context['bus'].wait_for_disconnect()
     finally:
         context['bus'].disconnect()
 
