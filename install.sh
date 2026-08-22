@@ -115,7 +115,7 @@ elif [ "$INIT" = "openrc" ]; then
 fi
 
 echo "Building virtualenv"
-/usr/bin/python3 -m venv "$INSTALL_DIR/venv"
+python3 -m venv "$INSTALL_DIR/venv"
 echo "Installing throttled and its Python dependencies"
 "$INSTALL_DIR/venv/bin/python3" -m pip install "$ROOT_DIR"
 rm -f "$INSTALL_DIR/requirements.txt" "$INSTALL_DIR/throttled.py" "$INSTALL_DIR/mmio.py"
