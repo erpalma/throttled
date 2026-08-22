@@ -135,7 +135,7 @@ class ConfigValidationTests(unittest.TestCase):
         energy_values = {
             'MSR_INTEL_PKG_ENERGY_STATUS': iter((2**32 - 10, 5)),
             'MSR_PP1_ENERGY_STATUS': iter((100, 110)),
-            'MSR_DRAM_ENERGY_STATUS': iter((100, 110)),
+            'MSR_DRAM_ENERGY_STATUS': iter((100, 120)),
         }
 
         def readmsr(msr, *args, **kwargs):
@@ -154,6 +154,8 @@ class ConfigValidationTests(unittest.TestCase):
 
         output = next(call.args[0] for call in log.call_args_list if 'Package:' in call.args[0])
         self.assertIn('Package: 15.0 W', output)
+        self.assertIn('Graphics: 10.0 W', output)
+        self.assertIn('DRAM: 20.0 W', output)
         self.assertIn('Total: 35.0 W', output)
 
     def test_load_config_disables_malformed_power_limits(self):

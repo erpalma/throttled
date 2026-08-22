@@ -1462,7 +1462,9 @@ def monitor(exit_event, wait):
             energy_w = ((energy_j - prev_j) % rapl_counter_range) / (now - prev_t)
             prev_energy[power_plane] = (energy_j, now)
             stats2[power_plane] = f'{energy_w:.1f} W'
-            total += energy_w
+            # Package already includes Graphics; DRAM is a separate domain.
+            if power_plane != 'Graphics':
+                total += energy_w
 
         stats2['Total'] = f'{total:.1f} W'
 
