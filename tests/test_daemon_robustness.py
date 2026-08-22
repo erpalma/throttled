@@ -1,3 +1,4 @@
+import configparser
 import importlib.util
 import io
 import unittest
@@ -55,6 +56,35 @@ class DaemonRobustnessTests(unittest.TestCase):
                     throttled.power_thread({}, None)
 
         os_exit.assert_called_once_with(1)
+
+    def test_dbus_fatal_status_escapes_main(self):
+        throttled = load_throttled()
+        config = configparser.ConfigParser()
+        config.read_dict({'GENERAL': {'Enabled': 'True'}, 'AC': {'Update_Rate_s': '5'}})
+        parsed_args = SimpleNamespace(log=None, debug=False, config='/tmp/throttled.conf', monitor=None, force=True)
+        parser = mock.Mock()
+        parser.parse_args.return_value = parsed_args
+
+        with (
+            mock.patch.object(throttled, 'build_arg_parser', return_value=parser),
+            mock.patch.object(throttled, 'load_config', return_value=config),
+            mock.patch.object(throttled, 'set_msr_allow_writes'),
+            mock.patch.object(throttled, 'test_msr_rw_capabilities'),
+            mock.patch.object(throttled, 'is_on_battery', return_value=False),
+            mock.patch.object(throttled, 'get_cpu_platform_info', return_value={}),
+            mock.patch.object(throttled, 'calc_reg_values', return_value={}),
+            mock.patch.object(throttled, 'undervolt'),
+            mock.patch.object(throttled, 'set_icc_max'),
+            mock.patch.object(throttled, 'set_hwp'),
+            mock.patch.object(throttled, 'log'),
+            mock.patch.object(throttled, 'Thread'),
+            mock.patch.object(throttled, 'run_dbus_loop', new=mock.Mock(return_value=object())),
+            mock.patch.object(throttled.asyncio, 'run', side_effect=SystemExit(7)),
+        ):
+            with self.assertRaises(SystemExit) as exit_context:
+                throttled.main()
+
+        self.assertEqual(exit_context.exception.code, 7)
 
 
 if __name__ == '__main__':
