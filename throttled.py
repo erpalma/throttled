@@ -1475,6 +1475,17 @@ def monitor(exit_event, wait):
         exit_event.wait(wait)
 
 
+def positive_finite_float(value):
+    """Parse a finite, positive command-line float."""
+    try:
+        number = float(value)
+    except ValueError as e:
+        raise argparse.ArgumentTypeError(f'{value!r} is not a number') from e
+    if not math.isfinite(number) or number <= 0:
+        raise argparse.ArgumentTypeError(f'{value!r} must be finite and positive')
+    return number
+
+
 def build_arg_parser():
     """Create the command-line parser, disabling argparse's own color output when available."""
     try:
@@ -1487,7 +1498,7 @@ def build_arg_parser():
         '--monitor',
         metavar='update_rate',
         const=1.0,
-        type=float,
+        type=positive_finite_float,
         nargs='?',
         help='realtime monitoring of throttling causes (default 1s)',
     )
