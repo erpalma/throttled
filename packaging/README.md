@@ -62,13 +62,13 @@ scripts, and nFPM definition needed by downstream packagers.
 Build the lightweight Debian package using only `dpkg-deb`:
 
 ```sh
-./scripts/build-deb.sh --version 0.12.2
+./scripts/build-deb.sh --version 0.13
 ```
 
 Build DEB, RPM, and APK packages with nFPM:
 
 ```sh
-./scripts/build-packages.sh --version 0.12.2 --release 1
+./scripts/build-packages.sh --version 0.13 --release 1
 ```
 
 Pass `--packager deb`, `--packager rpm`, or `--packager apk` to build selected

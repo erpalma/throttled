@@ -58,20 +58,20 @@ daemon, default configuration, and service definition.
 
 | System | Package |
 | --- | --- |
-| Debian-family system with `python3-dbus-fast` | [DEB](https://github.com/erpalma/throttled/releases/download/v0.12.2/throttled_0.12.2_all.deb) |
-| Fedora-family system | [RPM](https://github.com/erpalma/throttled/releases/download/v0.12.2/throttled-0.12.2-1.noarch.rpm) |
-| Alpine edge/testing | [APK](https://github.com/erpalma/throttled/releases/download/v0.12.2/throttled_0.12.2-1_noarch.apk) |
-| Python 3.10+ | [wheel](https://github.com/erpalma/throttled/releases/download/v0.12.2/throttled-0.12.2-py3-none-any.whl) |
-| Packagers | [source archive](https://github.com/erpalma/throttled/releases/download/v0.12.2/throttled-0.12.2.tar.gz) |
+| Debian-family system with `python3-dbus-fast` | [DEB](https://github.com/erpalma/throttled/releases/download/v0.13/throttled_0.13_all.deb) |
+| Fedora-family system | [RPM](https://github.com/erpalma/throttled/releases/download/v0.13/throttled-0.13-1.noarch.rpm) |
+| Alpine edge/testing | [APK](https://github.com/erpalma/throttled/releases/download/v0.13/throttled_0.13-1_noarch.apk) |
+| Python 3.10+ | [wheel](https://github.com/erpalma/throttled/releases/download/v0.13/throttled-0.13-py3-none-any.whl) |
+| Packagers | [source archive](https://github.com/erpalma/throttled/releases/download/v0.13/throttled-0.13.tar.gz) |
 
 Verify downloads with the
-[`SHA256SUMS`](https://github.com/erpalma/throttled/releases/download/v0.12.2/SHA256SUMS)
+[`SHA256SUMS`](https://github.com/erpalma/throttled/releases/download/v0.13/SHA256SUMS)
 file published with the release.
 
 DEB:
 
 ```sh
-sudo apt install ./throttled_0.12.2_all.deb
+sudo apt install ./throttled_0.13_all.deb
 ```
 
 On a running systemd host, the DEB enables and starts the service.
@@ -79,14 +79,14 @@ On a running systemd host, the DEB enables and starts the service.
 Fedora:
 
 ```sh
-sudo dnf install ./throttled-0.12.2-1.noarch.rpm
+sudo dnf install ./throttled-0.13-1.noarch.rpm
 sudo systemctl enable --now throttled.service
 ```
 
 Alpine:
 
 ```sh
-doas apk add --allow-untrusted ./throttled_0.12.2-1_noarch.apk
+doas apk add --allow-untrusted ./throttled_0.13-1_noarch.apk
 doas rc-update add throttled default
 doas rc-service throttled start
 ```
