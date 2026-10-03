@@ -10,7 +10,7 @@ permissions:
 jobs:
   python:
     name: Python ${{ matrix.python-version }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     strategy:
       fail-fast: false
       matrix:
@@ -47,7 +47,7 @@ jobs:
 
   packages:
     name: Native packages
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     env:
       NFPM_VERSION: v2.47.0
     steps:
