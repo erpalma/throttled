@@ -303,6 +303,16 @@ seen on the 2018 Lenovo ThinkPad generation. It was originally installed as
 `lenovo_fix` and was renamed to `throttled` in 2021. Current installations use
 `/etc/throttled.conf`, the `throttled` command, and `throttled.service`.
 
+## Star history
+
+<a href="https://star-history.com/#erpalma/throttled&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=erpalma/throttled&type=Date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=erpalma/throttled&type=Date" />
+    <img alt="Star history chart" src="https://api.star-history.com/svg?repos=erpalma/throttled&type=Date" />
+  </picture>
+</a>
+
 ## License
 
 `throttled` is available under the
