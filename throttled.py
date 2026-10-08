@@ -192,9 +192,11 @@ supported_cpus = {
     (6, 158, 12): 'CoffeeLake',
     (6, 158, 13): 'CoffeeLake',
     (6, 165, 2): 'CometLake',
+    (6, 165, 3): 'CometLake-S',
     (6, 165, 4): 'CometLake',
     (6, 165, 5): 'CometLake-S',
     (6, 166, 0): 'CometLake',
+    (6, 166, 1): 'CometLake-U',
     (6, 167, 1): 'RocketLake',
     (6, 170, 4): 'MeteorLake',
     (6, 181, 0): 'ArrowLake-U',
@@ -203,8 +205,12 @@ supported_cpus = {
     (6, 186, 3): 'RaptorLake-U',
     (6, 189, 1): 'LunarLake',
     (6, 190, 0): 'AlderLake-N',
+    (6, 191, 2): 'RaptorLake-HX/S',
+    (6, 191, 5): 'RaptorLake-S',
+    (6, 197, 2): 'ArrowLake-H',
     (6, 198, 2): 'ArrowLake-HX',
     (6, 204, 2): 'PantherLake',
+    (6, 204, 3): 'PantherLake',
 }
 
 FIXED_DRAM_ENERGY_UNIT_MODELS = {63, 79, 85, 86, 87}
