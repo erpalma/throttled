@@ -15,10 +15,11 @@ Lockdown it falls back to the kernel's own power-limit, thermal, and cpufreq
 interfaces.
 
 > [!NOTE]
-> Secure Boot and Kernel Lockdown support is available for testing in the
-> [v0.14 beta](https://github.com/erpalma/throttled/releases/tag/v0.14b1).
-> Feedback is welcome in
-> [issue #430](https://github.com/erpalma/throttled/issues/430).
+> Secure Boot and Kernel Lockdown support is being tested on the
+> [`lockdown-sysfs`](https://github.com/erpalma/throttled/tree/lockdown-sysfs)
+> branch. See the
+> [call for testing](https://github.com/erpalma/throttled/discussions/431) to
+> try it and report results.
 
 > [!CAUTION]
 > `throttled` runs as root and writes directly to CPU and chipset registers.
