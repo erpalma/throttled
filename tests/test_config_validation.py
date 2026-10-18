@@ -133,21 +133,14 @@ class ConfigValidationTests(unittest.TestCase):
 
         self.assertIn('Cannot map ecam region', log.call_args.args[0])
 
-    def test_check_kernel_warns_when_lockdown_is_active(self):
+    def test_forced_msr_backend_warns_when_lockdown_is_active(self):
         throttled = load_throttled()
+        config = throttled.configparser.ConfigParser()
+        config.read_dict({'GENERAL': {'Backend': 'msr'}})
 
-        def open_kernel_file(path, *args, **kwargs):
-            if path == '/sys/kernel/security/lockdown':
-                return io.StringIO('none [integrity] confidentiality\n')
-            if path == '/boot/config-test':
-                return io.StringIO('CONFIG_DEVMEM=y\nCONFIG_X86_MSR=m\n')
-            raise FileNotFoundError(path)
-
-        with mock.patch.object(throttled.os, 'geteuid', return_value=0):
-            with mock.patch.object(throttled, 'uname', return_value=('', '', 'test')):
-                with mock.patch('builtins.open', side_effect=open_kernel_file):
-                    with mock.patch.object(throttled, 'warning') as warning:
-                        throttled.check_kernel()
+        with mock.patch.object(throttled, '_read_sysfs', return_value='none [integrity] confidentiality'):
+            with mock.patch.object(throttled, 'warning') as warning:
+                self.assertEqual(throttled.select_backend(config), 'msr')
 
         warning.assert_called_once_with('Kernel lockdown is active: MSR and /dev/mem writes will be blocked.')
 

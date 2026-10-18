@@ -10,7 +10,15 @@ and the temperature target in MSR and MCHBAR registers when firmware or the
 embedded controller resets them.
 
 It also supports separate AC and battery profiles, undervolting, IccMax,
-cTDP, HWP hints, and live throttling diagnostics.
+cTDP, HWP hints, and live throttling diagnostics. With Secure Boot and Kernel
+Lockdown it falls back to the kernel's own power-limit, thermal, and cpufreq
+interfaces.
+
+> [!NOTE]
+> Secure Boot and Kernel Lockdown support is available for testing in the
+> [v0.14 beta](https://github.com/erpalma/throttled/releases/tag/v0.14b1).
+> Feedback is welcome in
+> [issue #430](https://github.com/erpalma/throttled/issues/430).
 
 > [!CAUTION]
 > `throttled` runs as root and writes directly to CPU and chipset registers.
@@ -43,6 +51,8 @@ laptop brand. See the
 - Supports configurable CPU, cache, GPU, System Agent, and Analog I/O
   undervolting where firmware permits it.
 - Supports IccMax overrides and experimental cTDP, HWP, and BD PROCHOT controls.
+- Keeps power limits, the temperature target, and HWP working under Secure Boot
+  and Kernel Lockdown through the kernel's sysfs interfaces.
 - Reloads `/etc/throttled.conf` automatically when the file changes.
 - Reports thermal, power, current, and cross-domain throttling causes in real
   time.
@@ -157,6 +167,13 @@ These are project defaults, not recommendations for every system. Check your
 processor limits and cooling capacity before changing them. The service reloads
 valid configuration changes automatically when `Autoreload` is enabled.
 
+The `Backend` option in `[GENERAL]` selects how settings are applied: `auto`
+(the default) uses direct register writes unless Kernel Lockdown is active,
+`msr` always writes the registers directly, and `sysfs` always uses the
+kernel interfaces described in
+[Secure Boot and Kernel Lockdown](#secure-boot-and-kernel-lockdown). Changing
+it requires a service restart.
+
 ### Undervolting and IccMax
 
 Voltage offsets can be configured independently in `[UNDERVOLT.AC]` and
@@ -202,18 +219,38 @@ Run `throttled --help` for all command-line options.
 
 - Linux on a supported Intel CPU.
 - Python 3.10 or newer.
-- Access to `/dev/cpu/*/msr` and `/dev/mem`.
+- Access to `/dev/cpu/*/msr` and `/dev/mem`; with Kernel Lockdown, see
+  [Secure Boot and Kernel Lockdown](#secure-boot-and-kernel-lockdown).
 - A kernel with `CONFIG_X86_MSR` and `CONFIG_DEVMEM`.
 - `dbus-fast`, a running system D-Bus, UPower, `modprobe`, and `setpci`.
 - Root privileges; containers, Flatpak, Snap, and AppImage sandboxes are not
   supported deployment targets.
 
-Secure Boot commonly enables Kernel Lockdown, which can block the MSR and PCI
-BAR access required by `throttled`. Check the service log and
-`/sys/kernel/security/lsm` before changing security settings. Disabling Secure
-Boot or Kernel Lockdown reduces system protection and should be an informed,
-system-specific decision. Hardened kernels can deny `/dev/mem` access even
-without Lockdown.
+### Secure Boot and Kernel Lockdown
+
+Secure Boot commonly enables Kernel Lockdown, which blocks direct MSR and
+`/dev/mem` writes. Check its state with `cat /sys/kernel/security/lockdown`.
+When Lockdown is active, `throttled` applies the settings through kernel
+drivers, which keep working under Lockdown:
+
+| Setting | Kernel interface |
+| --- | --- |
+| `PL1_*`, `PL2_*` | `intel_rapl` powercap package zones (`intel-rapl` and `intel-rapl-mmio`) |
+| `Trip_Temp_C` | int340x `tcc_offset_degree_celsius` or the `intel_tcc_cooling` device |
+| `HWP_Mode` | cpufreq `energy_performance_preference` |
+
+Undervolting, IccMax, cTDP, and `Disable_BDPROCHOT` have no kernel interface
+and are ignored with a warning. `--monitor` keeps working because Lockdown
+only blocks register writes. If none of the configured settings can be
+applied, `throttled` exits with status 77 and the systemd unit does not
+restart it.
+
+Disabling Secure Boot or Kernel Lockdown to regain the remaining features
+reduces system protection and should be an informed, system-specific decision.
+Hardened kernels can deny `/dev/mem` access even without Lockdown; set
+`Backend: sysfs` on those systems.
+
+### Other tools
 
 `thermald` can conflict by applying its own RAPL or temperature policy. Do not
 disable it blindly: some platforms work better with `thermald --adaptive`.

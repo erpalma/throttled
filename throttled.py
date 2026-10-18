@@ -69,6 +69,15 @@ MCHBAR_PACKAGE_POWER_LIMIT_OFFSET = 0x59A0
 MCHBAR_PACKAGE_POWER_LIMIT_SIZE = 8
 PCI_HOST_BRIDGE_SYSFS_PATH = '/sys/bus/pci/devices/0000:00:00.0'
 PCI_VENDOR_ID_INTEL = 0x8086
+# EX_NOPERM: the kernel refuses hardware access, so restarting cannot help
+EXIT_ACCESS_DENIED = 77
+BACKENDS = ('auto', 'msr', 'sysfs')
+LOCKDOWN_PATH = '/sys/kernel/security/lockdown'
+POWERCAP_ZONE_GLOB = '/sys/class/powercap/intel-rapl*:*'
+POWERCAP_CONSTRAINTS = {'long_term': ('PL1', 'TW1'), 'short_term': ('PL2', 'TW2')}
+TCC_OFFSET_GLOB = '/sys/bus/pci/devices/*/tcc_offset_degree_celsius'
+THERMAL_COOLING_GLOB = '/sys/class/thermal/cooling_device*'
+EPP_GLOB = '/sys/devices/system/cpu/cpu[0-9]*/cpufreq/energy_performance_preference'
 # The masked address bits also encode the per-generation window alignment, so
 # rejecting any bit outside the mask fully validates the BAR before /dev/mem
 # is ever opened.
@@ -270,6 +279,8 @@ MCHBAR_ADDRESS_MASKS_BY_PCI_DEVICE = {
 
 TESTMSR = False
 UNSUPPORTED_FEATURES = []
+BACKEND = 'msr'
+SYSFS_TARGETS = {'powercap': [], 'tcc': None, 'epp': []}
 MONITOR_POWER_DOMAINS = {
     'Package': 'MSR_INTEL_PKG_ENERGY_STATUS',
     'Graphics': 'MSR_PP1_ENERGY_STATUS',
@@ -389,7 +400,8 @@ def writemsr(msr, val, cpu=None):
             fatal(
                 f'Unable to write to MSR {msr} ({MSR_DICT[msr]:x}). Check that the msr kernel module '
                 'is loaded with allow_writes=on and that kernel lockdown is disabled (many kernels '
-                'enable lockdown automatically when Secure Boot is on).'
+                'enable lockdown automatically when Secure Boot is on).',
+                code=EXIT_ACCESS_DENIED,
             )
         elif e.errno == EIO:
             fatal(f'Unable to write to MSR {msr} ({MSR_DICT[msr]:x}). Unknown error.')
@@ -433,7 +445,8 @@ def readmsr(msr, from_bit=0, to_bit=63, cpu=None, flatten=False):
         if e.errno == EPERM or e.errno == EACCES:
             fatal(
                 f'Unable to read from MSR {msr} ({MSR_DICT[msr]:x}). Check that the msr kernel module '
-                'is loaded and not restricted by kernel lockdown.'
+                'is loaded and not restricted by kernel lockdown.',
+                code=EXIT_ACCESS_DENIED,
             )
         elif e.errno == EIO:
             fatal(f'Unable to read to MSR {msr} ({MSR_DICT[msr]:x}). Unknown error.')
@@ -617,7 +630,7 @@ def get_cpu_platform_info():
     return cpu_platform_info
 
 
-def get_reset_thermal_status():
+def get_reset_thermal_status(reset=True):
     """Read IA32_THERM_STATUS for every CPU, then clear the sticky log bits."""
     thermal_status_msr_value = readmsr('IA32_THERM_STATUS')
     thermal_status = []
@@ -626,8 +639,9 @@ def get_reset_thermal_status():
         for key, value in thermal_status_bits.items():
             thermal_status_core[key] = int(get_value_for_bits(msr_value, value[0], value[1]))
         thermal_status.append(thermal_status_core)
-    # reset log bits
-    writemsr('IA32_THERM_STATUS', 0)
+    if reset:
+        # reset log bits
+        writemsr('IA32_THERM_STATUS', 0)
     return thermal_status
 
 
@@ -871,6 +885,12 @@ def load_config():
     if not power_profiles:
         fatal('At least one power profile ([AC] or [BATTERY]) is required.')
 
+    backend = config.get('GENERAL', 'Backend', fallback='auto').strip().lower()
+    if backend not in BACKENDS:
+        fatal(f'The "Backend" parameter in [GENERAL] must be one of: {", ".join(BACKENDS)}.')
+    if config.has_section('GENERAL'):
+        config.set('GENERAL', 'Backend', backend)
+
     boolean_options = [('GENERAL', 'Enabled'), ('GENERAL', 'Autoreload'), ('AC', 'HWP_Mode')]
     boolean_options.extend((profile, 'Disable_BDPROCHOT') for profile in power_profiles)
     for section, option in boolean_options:
@@ -1084,7 +1104,33 @@ def calc_reg_values(platform_info, config):
             else:
                 valid_c_tdp_target_value = max(0, c_tdp_target_value)
                 regs[power_source]['MSR_CONFIG_TDP_CONTROL'] = valid_c_tdp_target_value
+    if BACKEND == 'sysfs':
+        return to_sysfs_reg_values(regs, config)
     return regs
+
+
+def to_sysfs_reg_values(regs, config):
+    """Translate validated MSR values into the units of the kernel sysfs interfaces."""
+    sysfs_regs = defaultdict(dict)
+    for power_source, values in regs.items():
+        if 'MSR_TEMPERATURE_TARGET' in values:
+            sysfs_regs[power_source]['TCC_OFFSET'] = values['MSR_TEMPERATURE_TARGET'] >> 24
+        if 'MSR_PKG_POWER_LIMIT' in values:
+            # unset fields are left untouched instead of rewriting the current value
+            limits = {}
+            for key, option in (
+                ('PL1', 'PL1_Tdp_W'),
+                ('TW1', 'PL1_Duration_s'),
+                ('PL2', 'PL2_Tdp_W'),
+                ('TW2', 'PL2_Duration_s'),
+            ):
+                value = config.getfloat(power_source, option, fallback=None)
+                if value is not None:
+                    limits[key] = int(round(value * 1e6))
+            sysfs_regs[power_source]['POWERCAP'] = limits
+        if values.get('MSR_CONFIG_TDP_CONTROL'):
+            warning('cTDP cannot be changed through kernel interfaces: ignoring it.')
+    return sysfs_regs
 
 
 def set_hwp(performance_mode):
@@ -1092,6 +1138,9 @@ def set_hwp(performance_mode):
     if performance_mode not in (True, False) or 'HWP' in UNSUPPORTED_FEATURES:
         return
     hwp_mode = HWP_PERFORMANCE_VALUE if performance_mode is True else HWP_DEFAULT_VALUE
+    if BACKEND == 'sysfs':
+        set_sysfs_epp(hwp_mode)
+        return
     # a CPU that disappears mid-loop is fatal rather than falling back to a broadcast write
     for addr in _ensure_msr_module():
         cpu = int(os.path.basename(os.path.dirname(addr)))
@@ -1218,6 +1267,191 @@ def read_mchbar_base():
     return None
 
 
+def _read_sysfs(path):
+    with open(path) as f:
+        return f.read().strip()
+
+
+def _write_sysfs(path, value):
+    with open(path, 'w') as f:
+        f.write(str(value))
+
+
+def kernel_lockdown_active():
+    """Return whether kernel lockdown blocks MSR and /dev/mem writes."""
+    try:
+        return '[none]' not in _read_sysfs(LOCKDOWN_PATH)
+    except OSError:
+        return False
+
+
+def select_backend(config):
+    """Choose between direct MSR/MMIO writes and the kernel sysfs interfaces."""
+    global BACKEND
+    requested = config.get('GENERAL', 'Backend', fallback='auto')
+    lockdown = kernel_lockdown_active()
+    if requested == 'auto':
+        BACKEND = 'sysfs' if lockdown else 'msr'
+    else:
+        BACKEND = requested
+    if lockdown and BACKEND == 'sysfs':
+        log('[I] Kernel lockdown is active: using kernel sysfs interfaces instead of MSR and /dev/mem writes.')
+    elif lockdown:
+        warning('Kernel lockdown is active: MSR and /dev/mem writes will be blocked.')
+    elif BACKEND == 'sysfs':
+        log('[I] Using kernel sysfs interfaces as requested by "Backend".')
+    return BACKEND
+
+
+def discover_powercap_zones():
+    """Return the package RAPL zones (MSR and MMIO) with their PL1/PL2 constraint prefixes."""
+    zones = []
+    for path in sorted(glob.glob(POWERCAP_ZONE_GLOB)):
+        # intel-rapl:0 is a package, intel-rapl:0:0 one of its subzones
+        if os.path.basename(path).count(':') != 1:
+            continue
+        try:
+            if not _read_sysfs(os.path.join(path, 'name')).startswith('package-'):
+                continue
+            constraints = {}
+            for name_path in sorted(glob.glob(os.path.join(path, 'constraint_*_name'))):
+                keys = POWERCAP_CONSTRAINTS.get(_read_sysfs(name_path))
+                if keys is not None:
+                    constraints[keys] = name_path[: -len('name')]
+        except OSError:
+            continue
+        if constraints:
+            zones.append({'path': path, 'constraints': constraints, 'failed': set()})
+    return zones
+
+
+def discover_tcc_target():
+    """Return the sysfs file that sets the TCC offset, preferring the int340x attribute."""
+    for path in sorted(glob.glob(TCC_OFFSET_GLOB)):
+        return {'path': path, 'max': 63}
+    for device in sorted(glob.glob(THERMAL_COOLING_GLOB)):
+        try:
+            if _read_sysfs(os.path.join(device, 'type')) == 'TCC Offset':
+                return {
+                    'path': os.path.join(device, 'cur_state'),
+                    'max': int(_read_sysfs(os.path.join(device, 'max_state'))),
+                }
+        except (OSError, ValueError):
+            continue
+    return None
+
+
+def discover_epp_files():
+    """Return the per-CPU cpufreq energy_performance_preference files in CPU order."""
+    return sorted(glob.glob(EPP_GLOB), key=lambda path: int(re.search(r'/cpu(\d+)/', path).group(1)))
+
+
+def discover_sysfs_targets():
+    SYSFS_TARGETS['powercap'] = discover_powercap_zones()
+    SYSFS_TARGETS['tcc'] = discover_tcc_target()
+    SYSFS_TARGETS['epp'] = discover_epp_files()
+    for zone in SYSFS_TARGETS['powercap']:
+        log(f'[I] Package power limits: {zone["path"]:s}')
+    if SYSFS_TARGETS['tcc'] is not None:
+        log(f'[I] Trip temperature: {SYSFS_TARGETS["tcc"]["path"]:s}')
+
+
+def _configured(config, keys, planes):
+    return any(config.getfloat(key, plane, fallback=0) != 0 for key in keys for plane in planes if key in config)
+
+
+def check_sysfs_coverage(config, regs):
+    """Warn about settings the kernel interfaces cannot apply; exit if none of them can be applied."""
+    profiles = get_configured_power_profiles(config)
+    if _configured(config, UNDERVOLT_KEYS, VOLTAGE_PLANES):
+        warning('Undervolt cannot be applied through kernel interfaces: ignoring it.')
+    if _configured(config, ICCMAX_KEYS, CURRENT_PLANES):
+        warning('IccMax cannot be applied through kernel interfaces: ignoring it.')
+    if any(config.getboolean(profile, 'Disable_BDPROCHOT', fallback=False) for profile in profiles):
+        warning('BDPROCHOT cannot be disabled through kernel interfaces: ignoring it.')
+
+    applicable = 0
+    if any('TCC_OFFSET' in regs[profile] for profile in profiles):
+        if SYSFS_TARGETS['tcc'] is None:
+            warning('No kernel interface for the trip temperature (intel_tcc_cooling or int340x): ignoring it.')
+        else:
+            applicable += 1
+    if any(regs[profile].get('POWERCAP') for profile in profiles):
+        if not SYSFS_TARGETS['powercap']:
+            warning('No intel_rapl powercap zone found: ignoring the package power limits.')
+        else:
+            applicable += 1
+    if config.getboolean('AC', 'HWP_Mode', fallback=False):
+        if 'HWP' in UNSUPPORTED_FEATURES:
+            warning('No cpufreq energy_performance_preference interface: ignoring HWP_Mode.')
+        else:
+            applicable += 1
+    if not applicable:
+        fatal(
+            'None of the configured settings can be applied through kernel interfaces. '
+            'Undervolt, IccMax, cTDP and BDPROCHOT need direct MSR access, which kernel lockdown blocks.',
+            code=EXIT_ACCESS_DENIED,
+        )
+
+
+def apply_sysfs_tcc_offset(offset):
+    """Write the TCC offset (degrees below TjMax) through the kernel thermal drivers."""
+    target = SYSFS_TARGETS['tcc']
+    if target is None:
+        return
+    if offset > target['max']:
+        warning(f'Trip temperature offset {offset:d} exceeds the kernel limit, clamping to {target["max"]:d}.')
+        offset = target['max']
+    try:
+        _write_sysfs(target['path'], offset)
+        if args.debug:
+            read_value = int(_read_sysfs(target['path']))
+            match = OK if read_value == offset else ERR
+            log(f'[D] TCC offset - write {offset:d} - read {read_value:d} - match {match}')
+    except (OSError, ValueError) as e:
+        warning(f'Unable to set the trip temperature through {target["path"]:s} ({e}); disabling it.', oneshot=False)
+        SYSFS_TARGETS['tcc'] = None
+
+
+def apply_sysfs_power_limits(limits):
+    """Write PL1/PL2 and their time windows to every package powercap zone."""
+    for zone in SYSFS_TARGETS['powercap']:
+        if limits.get('PL1') is not None and 'enabled' not in zone['failed']:
+            enabled_path = os.path.join(zone['path'], 'enabled')
+            try:
+                if _read_sysfs(enabled_path) == '0':
+                    _write_sysfs(enabled_path, 1)
+            except OSError as e:
+                warning(f'Unable to enable {zone["path"]:s} ({e}).', oneshot=False)
+                zone['failed'].add('enabled')
+        for keys, prefix in zone['constraints'].items():
+            for key, suffix in zip(keys, ('power_limit_uw', 'time_window_us')):
+                if limits.get(key) is None or key in zone['failed']:
+                    continue
+                path = prefix + suffix
+                try:
+                    _write_sysfs(path, limits[key])
+                    if args.debug:
+                        log(f'[D] {path:s} - write {limits[key]:d} - read {_read_sysfs(path):s}')
+                except OSError as e:
+                    # the firmware may lock a single field, e.g. the PL2 time window
+                    warning(f'Unable to write {path:s} ({e}); disabling {key:s} on this zone.', oneshot=False)
+                    zone['failed'].add(key)
+
+
+def set_sysfs_epp(hwp_mode):
+    """Write the energy/performance preference on every CPU through cpufreq."""
+    for path in SYSFS_TARGETS['epp']:
+        try:
+            _write_sysfs(path, hwp_mode)
+        except OSError as e:
+            warning(f'Unable to write {path:s} ({e}); disabling HWP_Mode.', oneshot=False)
+            UNSUPPORTED_FEATURES.append('HWP')
+            return
+        if args.debug:
+            log(f'[D] {path:s} - write {hwp_mode:d} - read {_read_sysfs(path):s}')
+
+
 def power_thread(state, exit_event):
     """Crash-loud wrapper for _power_thread: an uncaught exception (or a
     sys.exit() from a helper) would only kill this thread, leaving a zombie
@@ -1235,7 +1469,8 @@ def power_thread(state, exit_event):
 def _power_thread(state, exit_event):
     """Daemon main loop: periodically (re-)apply throttling MSRs."""
     config, regs = state['config'], state['regs']
-    mchbar_base = read_mchbar_base()
+    # the kernel's intel-rapl-mmio zone replaces the MCHBAR mapping on the sysfs backend
+    mchbar_base = read_mchbar_base() if BACKEND == 'msr' else None
     mchbar_mmio = None
     if mchbar_base is not None:
         try:
@@ -1282,7 +1517,7 @@ def _power_thread(state, exit_event):
 
         # log thermal status
         if args.debug:
-            thermal_status = get_reset_thermal_status()
+            thermal_status = get_reset_thermal_status(reset=BACKEND == 'msr')
             for index, core_thermal_status in enumerate(thermal_status):
                 for key, value in core_thermal_status.items():
                     log(f'[D] core {index} thermal status: {key.replace("_", " ")} = {value}')
@@ -1299,6 +1534,12 @@ def _power_thread(state, exit_event):
                     # restore the default energy/performance preference on battery
                     set_hwp(False)
             applied_source = power_source
+
+        # kernel sysfs interfaces
+        if 'TCC_OFFSET' in regs[power_source]:
+            apply_sysfs_tcc_offset(regs[power_source]['TCC_OFFSET'])
+        if 'POWERCAP' in regs[power_source]:
+            apply_sysfs_power_limits(regs[power_source]['POWERCAP'])
 
         # set temperature trip point
         if 'MSR_TEMPERATURE_TARGET' in regs[power_source]:
@@ -1342,7 +1583,7 @@ def _power_thread(state, exit_event):
 
         # Disable BDPROCHOT
         disable_bdprochot = config.getboolean(power_source, 'Disable_BDPROCHOT', fallback=None)
-        if disable_bdprochot:
+        if disable_bdprochot and BACKEND == 'msr':
             set_disable_bdprochot()
 
         wait_t = get_update_rate(config, power_source)
@@ -1360,13 +1601,6 @@ def check_kernel():
     if os.geteuid() != 0:
         fatal('No root no party. Try again with sudo.')
 
-    try:
-        with open('/sys/kernel/security/lockdown') as f:
-            if '[none]' not in f.read():
-                warning('Kernel lockdown is active: MSR and /dev/mem writes will be blocked.')
-    except OSError:
-        pass
-
     kernel_config = None
     try:
         with open(os.path.join('/boot', f'config-{uname()[2]:s}')) as f:
@@ -1383,7 +1617,7 @@ def check_kernel():
     if kernel_config is None:
         log('[W] Unable to obtain and validate kernel config.')
         return
-    elif not re.search('CONFIG_DEVMEM=y', kernel_config):
+    elif BACKEND == 'msr' and not re.search('CONFIG_DEVMEM=y', kernel_config):
         warning('Bad kernel config: you need CONFIG_DEVMEM=y.')
     if not re.search('CONFIG_X86_MSR=(y|m)', kernel_config):
         fatal('Bad kernel config: you need CONFIG_X86_MSR builtin or as module.')
@@ -1433,27 +1667,33 @@ def test_msr_rw_capabilities():
     global TESTMSR
     TESTMSR = True
     try:
-        try:
-            log('[I] Testing if undervolt is supported...')
-            get_undervolt()
-        except (IOError, OSError):
-            warning('Undervolt seems not to be supported by your system, disabling.')
-            UNSUPPORTED_FEATURES.append('UNDERVOLT')
+        if BACKEND == 'sysfs':
+            # the probes below write MSRs; the kernel has no undervolt or IccMax interface
+            UNSUPPORTED_FEATURES.extend(('UNDERVOLT', 'ICCMAX'))
+            if not SYSFS_TARGETS['epp']:
+                UNSUPPORTED_FEATURES.append('HWP')
+        else:
+            try:
+                log('[I] Testing if undervolt is supported...')
+                get_undervolt()
+            except (IOError, OSError):
+                warning('Undervolt seems not to be supported by your system, disabling.')
+                UNSUPPORTED_FEATURES.append('UNDERVOLT')
 
-        try:
-            log('[I] Testing if IccMax is supported...')
-            get_icc_max()
-        except (IOError, OSError):
-            warning('IccMax seems not to be supported by your system, disabling.')
-            UNSUPPORTED_FEATURES.append('ICCMAX')
+            try:
+                log('[I] Testing if IccMax is supported...')
+                get_icc_max()
+            except (IOError, OSError):
+                warning('IccMax seems not to be supported by your system, disabling.')
+                UNSUPPORTED_FEATURES.append('ICCMAX')
 
-        try:
-            log('[I] Testing if HWP is supported...')
-            cur_val = readmsr('IA32_HWP_REQUEST', cpu=0)
-            writemsr('IA32_HWP_REQUEST', cur_val, cpu=0)
-        except (IOError, OSError):
-            warning('HWP seems not to be supported by your system, disabling.')
-            UNSUPPORTED_FEATURES.append('HWP')
+            try:
+                log('[I] Testing if HWP is supported...')
+                cur_val = readmsr('IA32_HWP_REQUEST', cpu=0)
+                writemsr('IA32_HWP_REQUEST', cur_val, cpu=0)
+            except (IOError, OSError):
+                warning('HWP seems not to be supported by your system, disabling.')
+                UNSUPPORTED_FEATURES.append('HWP')
 
         if args.monitor is not None:
             for domain, msr in tuple(MONITOR_POWER_DOMAINS.items()):
@@ -1580,12 +1820,17 @@ def main():
         log('[I] Throttled is disabled in config file... Quitting. :(')
         return
 
+    select_backend(config)
+
     cpuid = None
     if not args.force:
         check_kernel()
         cpuid = check_cpu()
 
-    set_msr_allow_writes()
+    if BACKEND == 'msr':
+        set_msr_allow_writes()
+    else:
+        discover_sysfs_targets()
 
     test_msr_rw_capabilities()
 
@@ -1596,6 +1841,8 @@ def main():
         for key, value in platform_info.items():
             log(f'[D] cpu platform info: {key.replace("_", " ")} = {value}')
     regs = calc_reg_values(platform_info, config)
+    if BACKEND == 'sysfs':
+        check_sysfs_coverage(config, regs)
 
     undervolt(config)
     set_icc_max(config)

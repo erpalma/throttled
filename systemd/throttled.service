@@ -9,6 +9,8 @@ Environment=PYTHONUNBUFFERED=1
 # The daemon exits non-zero if the power thread dies: let systemd revive it
 Restart=on-failure
 RestartSec=5
+# Exit status 77 means the kernel refuses hardware access (e.g. lockdown): retrying cannot help
+RestartPreventExitStatus=77
 
 [Install]
 WantedBy=multi-user.target

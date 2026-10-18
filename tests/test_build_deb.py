@@ -91,6 +91,7 @@ class BuildDebTests(unittest.TestCase):
             self.assertIn('systemctl daemon-reload', postrm)
             self.assertIn('Restart=on-failure', service)
             self.assertIn('RestartSec=5', service)
+            self.assertIn('RestartPreventExitStatus=77', service)
             self.assertIn('ExecStart=/usr/bin/throttled --config /etc/throttled.conf', service)
             self.assertIn('/usr/bin/python3 /usr/lib/throttled/throttled.py', wrapper)
 
