@@ -12,6 +12,13 @@ embedded controller resets them.
 It also supports separate AC and battery profiles, undervolting, IccMax,
 cTDP, HWP hints, and live throttling diagnostics.
 
+> [!NOTE]
+> Secure Boot and Kernel Lockdown support is being tested on the
+> [`lockdown-sysfs`](https://github.com/erpalma/throttled/tree/lockdown-sysfs)
+> branch. See the
+> [call for testing](https://github.com/erpalma/throttled/discussions/431) to
+> try it and report results.
+
 > [!CAUTION]
 > `throttled` runs as root and writes directly to CPU and chipset registers.
 > Incorrect power, temperature, voltage, or current values can make a system
