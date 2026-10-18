@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from collections import defaultdict
 from contextlib import redirect_stderr
-from errno import EPERM
+from errno import EACCES, EBUSY, EPERM
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -161,6 +161,18 @@ class SysfsBackendTests(unittest.TestCase):
             self.assertEqual(self.sysfs.read(f'powercap/{zone}/constraint_1_time_window_us'), '2440')
             self.assertEqual(self.sysfs.read(f'powercap/{zone}/enabled'), '1')
         self.assertEqual(self.sysfs.read('powercap/intel-rapl-mmio:0/constraint_2_power_limit_uw'), '71000000')
+
+    def test_enabled_is_reasserted_even_when_it_reads_enabled(self):
+        # the kernel reports only PL1 in "enabled", but a write also enables PL2/PL4
+        self.add_tiger_lake_zones()
+        self.throttled.SYSFS_TARGETS['powercap'] = self.throttled.discover_powercap_zones()
+
+        with mock.patch.object(self.throttled, '_write_sysfs', wraps=self.throttled._write_sysfs) as write:
+            self.throttled.apply_sysfs_power_limits({'PL2': 44000000})
+
+        enabled_writes = [call.args for call in write.call_args_list if call.args[0].endswith('/enabled')]
+        self.assertEqual(len(enabled_writes), 2)
+        self.assertTrue(all(value == 1 for _, value in enabled_writes))
 
     def test_a_rejected_field_disables_only_that_field(self):
         self.add_tiger_lake_zones()
@@ -320,12 +332,59 @@ class SysfsBackendTests(unittest.TestCase):
 
         self.assertEqual(throttled.UNSUPPORTED_FEATURES, ['HWP'])
 
+    def test_a_busy_epp_is_retried_instead_of_disabling_hwp(self):
+        throttled = self.throttled
+        throttled.BACKEND = 'sysfs'
+        throttled.SYSFS_TARGETS['epp'] = [str(self.sysfs.write('cpu/cpu0/cpufreq/energy_performance_preference', 'performance'))]
+        busy = OSError(EBUSY, 'Device or resource busy')
+
+        with mock.patch.object(throttled, 'warning'):
+            with mock.patch.object(throttled, '_write_sysfs', side_effect=[busy, None]) as write:
+                throttled.set_hwp(True)
+                throttled.set_hwp(False)
+
+        self.assertEqual(write.call_count, 2)
+        self.assertEqual(throttled.UNSUPPORTED_FEATURES, [])
+
+    def test_coverage_accounts_for_fields_the_kernel_rejected(self):
+        throttled = self.throttled
+        self.add_tiger_lake_zones()
+        throttled.SYSFS_TARGETS['powercap'] = throttled.discover_powercap_zones()
+        config = make_config({'AC': {'PL1_Tdp_W': '29'}})
+        regs = defaultdict(dict, {'AC': {'POWERCAP': {'PL1': 29000000}}})
+        self.assertTrue(throttled.sysfs_settings_applicable(config, regs))
+
+        with mock.patch.object(throttled, 'warning'):
+            with mock.patch.object(throttled, '_write_sysfs', side_effect=PermissionError(EACCES, 'locked by BIOS')):
+                throttled.apply_sysfs_power_limits(regs['AC']['POWERCAP'])
+
+        self.assertFalse(throttled.sysfs_settings_applicable(config, regs))
+
+    def test_power_thread_exits_without_restart_once_everything_is_rejected(self):
+        throttled = self.throttled
+        throttled.BACKEND = 'sysfs'
+        throttled.SYSFS_TARGETS['tcc'] = {'path': '/nonexistent', 'max': 63}
+        config = make_config({'GENERAL': {'Enabled': 'True'}, 'AC': {'Update_Rate_s': '5', 'Trip_Temp_C': '85'}})
+        regs = defaultdict(dict, {'AC': {'TCC_OFFSET': 15}})
+
+        def reject(offset):
+            throttled.SYSFS_TARGETS['tcc'] = None
+
+        with mock.patch.object(throttled, 'apply_sysfs_tcc_offset', side_effect=reject):
+            with redirect_stderr(io.StringIO()) as stderr:
+                with self.assertRaises(SystemExit) as raised:
+                    throttled._power_thread({'config': config, 'regs': regs}, StopAfterWait())
+
+        self.assertEqual(raised.exception.code, throttled.EXIT_ACCESS_DENIED)
+        self.assertIn('rejected every configured setting', stderr.getvalue())
+
     def test_power_thread_uses_only_sysfs_on_the_sysfs_backend(self):
         throttled = self.throttled
         throttled.BACKEND = 'sysfs'
         throttled.args.debug = True
         config = make_config({'GENERAL': {'Enabled': 'True'}, 'AC': {'Update_Rate_s': '5', 'Disable_BDPROCHOT': 'True'}})
         regs = defaultdict(dict, {'AC': {'TCC_OFFSET': 15, 'POWERCAP': {'PL1': 29000000}}})
+        throttled.SYSFS_TARGETS['tcc'] = {'path': '/nonexistent', 'max': 63}
 
         with mock.patch.multiple(
             throttled,

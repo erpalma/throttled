@@ -242,8 +242,8 @@ drivers, which keep working under Lockdown:
 Undervolting, IccMax, cTDP, and `Disable_BDPROCHOT` have no kernel interface
 and are ignored with a warning. `--monitor` keeps working because Lockdown
 only blocks register writes. If none of the configured settings can be
-applied, `throttled` exits with status 77 and the systemd unit does not
-restart it.
+applied, at startup or after the kernel rejects them, `throttled` exits with
+status 77 and the systemd unit does not restart it.
 
 Disabling Secure Boot or Kernel Lockdown to regain the remaining features
 reduces system protection and should be an informed, system-specific decision.

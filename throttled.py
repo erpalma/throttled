@@ -13,7 +13,7 @@ import sys
 import traceback
 from collections import defaultdict
 from datetime import datetime
-from errno import EACCES, EIO, ENOENT, EPERM
+from errno import EACCES, EBUSY, EIO, ENOENT, EPERM
 from platform import uname
 from subprocess import check_output, CalledProcessError, PIPE
 from threading import Event, Lock, Thread, current_thread, main_thread
@@ -1360,6 +1360,19 @@ def _configured(config, keys, planes):
     return any(config.getfloat(key, plane, fallback=0) != 0 for key in keys for plane in planes if key in config)
 
 
+def sysfs_settings_applicable(config, regs):
+    """Return whether at least one configured setting still has a usable kernel interface."""
+    profiles = get_configured_power_profiles(config)
+    if SYSFS_TARGETS['tcc'] is not None and any('TCC_OFFSET' in regs[profile] for profile in profiles):
+        return True
+    for profile in profiles:
+        for zone in SYSFS_TARGETS['powercap']:
+            zone_keys = {key for keys in zone['constraints'] for key in keys}
+            if any(key in zone_keys and key not in zone['failed'] for key in regs[profile].get('POWERCAP', {})):
+                return True
+    return config.getboolean('AC', 'HWP_Mode', fallback=False) and 'HWP' not in UNSUPPORTED_FEATURES
+
+
 def check_sysfs_coverage(config, regs):
     """Warn about settings the kernel interfaces cannot apply; exit if none of them can be applied."""
     profiles = get_configured_power_profiles(config)
@@ -1369,24 +1382,13 @@ def check_sysfs_coverage(config, regs):
         warning('IccMax cannot be applied through kernel interfaces: ignoring it.')
     if any(config.getboolean(profile, 'Disable_BDPROCHOT', fallback=False) for profile in profiles):
         warning('BDPROCHOT cannot be disabled through kernel interfaces: ignoring it.')
-
-    applicable = 0
-    if any('TCC_OFFSET' in regs[profile] for profile in profiles):
-        if SYSFS_TARGETS['tcc'] is None:
-            warning('No kernel interface for the trip temperature (intel_tcc_cooling or int340x): ignoring it.')
-        else:
-            applicable += 1
-    if any(regs[profile].get('POWERCAP') for profile in profiles):
-        if not SYSFS_TARGETS['powercap']:
-            warning('No intel_rapl powercap zone found: ignoring the package power limits.')
-        else:
-            applicable += 1
-    if config.getboolean('AC', 'HWP_Mode', fallback=False):
-        if 'HWP' in UNSUPPORTED_FEATURES:
-            warning('No cpufreq energy_performance_preference interface: ignoring HWP_Mode.')
-        else:
-            applicable += 1
-    if not applicable:
+    if any('TCC_OFFSET' in regs[profile] for profile in profiles) and SYSFS_TARGETS['tcc'] is None:
+        warning('No kernel interface for the trip temperature (intel_tcc_cooling or int340x): ignoring it.')
+    if any(regs[profile].get('POWERCAP') for profile in profiles) and not SYSFS_TARGETS['powercap']:
+        warning('No intel_rapl powercap zone found: ignoring the package power limits.')
+    if config.getboolean('AC', 'HWP_Mode', fallback=False) and 'HWP' in UNSUPPORTED_FEATURES:
+        warning('No cpufreq energy_performance_preference interface: ignoring HWP_Mode.')
+    if not sysfs_settings_applicable(config, regs):
         fatal(
             'None of the configured settings can be applied through kernel interfaces. '
             'Undervolt, IccMax, cTDP and BDPROCHOT need direct MSR access, which kernel lockdown blocks.',
@@ -1416,11 +1418,10 @@ def apply_sysfs_tcc_offset(offset):
 def apply_sysfs_power_limits(limits):
     """Write PL1/PL2 and their time windows to every package powercap zone."""
     for zone in SYSFS_TARGETS['powercap']:
-        if limits.get('PL1') is not None and 'enabled' not in zone['failed']:
-            enabled_path = os.path.join(zone['path'], 'enabled')
+        if limits and 'enabled' not in zone['failed']:
+            # reads report PL1 only, while writes also enable PL2/PL4: always reassert it
             try:
-                if _read_sysfs(enabled_path) == '0':
-                    _write_sysfs(enabled_path, 1)
+                _write_sysfs(os.path.join(zone['path'], 'enabled'), 1)
             except OSError as e:
                 warning(f'Unable to enable {zone["path"]:s} ({e}).', oneshot=False)
                 zone['failed'].add('enabled')
@@ -1445,6 +1446,10 @@ def set_sysfs_epp(hwp_mode):
         try:
             _write_sysfs(path, hwp_mode)
         except OSError as e:
+            if e.errno == EBUSY:
+                # intel_pstate refuses EPP changes while the performance governor is active
+                warning(f'{path:s} is busy ({e}); retrying on the next update.')
+                return
             warning(f'Unable to write {path:s} ({e}); disabling HWP_Mode.', oneshot=False)
             UNSUPPORTED_FEATURES.append('HWP')
             return
@@ -1592,6 +1597,12 @@ def _power_thread(state, exit_event):
         if enable_hwp_mode and next_hwp_write <= time() and power_source == 'AC':
             set_hwp(enable_hwp_mode)
             next_hwp_write = time() + HWP_INTERVAL
+
+        if BACKEND == 'sysfs' and not sysfs_settings_applicable(config, regs):
+            fatal(
+                'The kernel interfaces rejected every configured setting: nothing is left to apply.',
+                code=EXIT_ACCESS_DENIED,
+            )
 
         exit_event.wait(wait_t)
 
