@@ -127,6 +127,7 @@ class PR394FixTests(unittest.TestCase):
         expected = {
             0x5914: throttled.MCHBAR_ADDRESS_MASK_39_15,  # T480/T480s/X1C6
             0x3EC4: throttled.MCHBAR_ADDRESS_MASK_39_15,  # P53
+            0x4E26: throttled.MCHBAR_ADDRESS_MASK_39_15,  # Jasper Lake (#433)
             0x9A14: throttled.MCHBAR_ADDRESS_MASK_39_17,  # Tiger Lake
             0x4601: throttled.MCHBAR_ADDRESS_MASK_42_17,  # Alder Lake
             0xA706: throttled.MCHBAR_ADDRESS_MASK_42_17,  # Raptor Lake
@@ -228,6 +229,18 @@ class PR394FixTests(unittest.TestCase):
         for low, high, expected in cases:
             with self.subTest(low=low, high=high):
                 with mock.patch.object(throttled, '_read_host_bridge_identity', return_value=(0x8086, 0x9B61)):
+                    with mock.patch.object(throttled, '_read_mchbar_dword', side_effect=(low, high) * 2):
+                        with mock.patch.object(throttled, 'warning'):
+                            self.assertEqual(throttled.read_mchbar_base(), expected)
+
+    def test_mchbar_reader_validates_the_jasper_lake_32k_layout(self):
+        throttled = load_throttled()
+        # coreboot places the 32 KiB Jasper Lake MCHBAR at 0xfea80000
+        cases = ((0xFEA80001, 0, 0xFEA80000), (0xFEA88001, 0, 0xFEA88000), (0xFEA84001, 0, None), (0x8001, 0x80, None))
+
+        for low, high, expected in cases:
+            with self.subTest(low=low, high=high):
+                with mock.patch.object(throttled, '_read_host_bridge_identity', return_value=(0x8086, 0x4E26)):
                     with mock.patch.object(throttled, '_read_mchbar_dword', side_effect=(low, high) * 2):
                         with mock.patch.object(throttled, 'warning'):
                             self.assertEqual(throttled.read_mchbar_base(), expected)
