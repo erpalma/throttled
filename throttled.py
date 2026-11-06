@@ -240,6 +240,14 @@ MCHBAR_ADDRESS_MASKS_BY_PCI_DEVICE = {
     0x9B54: MCHBAR_ADDRESS_MASK_39_15,
     # Comet Lake-U (Intel doc 615229; coreboot PCI_DID_INTEL_CML_U).
     0x9B61: MCHBAR_ADDRESS_MASK_39_15,
+    # Jasper Lake (coreboot PCI_DID_INTEL_JSL_ID_1..6 and 32 KiB MCHBAR; its
+    # set_power_limits() mirrors the MSR 0x610 value at MCH_PKG_POWER_LIMIT_LO 0x59a0).
+    0x4E22: MCHBAR_ADDRESS_MASK_39_15,
+    0x4E26: MCHBAR_ADDRESS_MASK_39_15,
+    0x4E12: MCHBAR_ADDRESS_MASK_39_15,
+    0x4E14: MCHBAR_ADDRESS_MASK_39_15,
+    0x4E24: MCHBAR_ADDRESS_MASK_39_15,
+    0x4E28: MCHBAR_ADDRESS_MASK_39_15,
     # Tiger Lake (Linux igen6 tgl_cfg).
     0x9A14: MCHBAR_ADDRESS_MASK_39_17,
     # Alder Lake (Linux igen6 adl_cfg).
