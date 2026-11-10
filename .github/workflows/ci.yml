@@ -18,6 +18,7 @@ jobs:
           - "3.10"
           - "3.12"
           - "3.14"
+          - "3.15"
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -38,7 +39,7 @@ jobs:
           /tmp/throttled-wheel/bin/throttled --version
           /tmp/throttled-wheel/bin/throttled --help
       - uses: actions/upload-artifact@v7
-        if: matrix.python-version == '3.14'
+        if: matrix.python-version == '3.15'
         with:
           name: python-distributions
           path: |
