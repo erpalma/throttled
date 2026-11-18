@@ -1,5 +1,6 @@
 import importlib.util
 import io
+import re
 import struct
 import unittest
 from pathlib import Path
@@ -128,6 +129,9 @@ class PR394FixTests(unittest.TestCase):
             0x5914: throttled.MCHBAR_ADDRESS_MASK_39_15,  # T480/T480s/X1C6
             0x3EC4: throttled.MCHBAR_ADDRESS_MASK_39_15,  # P53
             0x4E26: throttled.MCHBAR_ADDRESS_MASK_39_15,  # Jasper Lake (#433)
+            0x3E34: throttled.MCHBAR_ADDRESS_MASK_39_15,  # Whiskey Lake (#437)
+            0x3ED0: throttled.MCHBAR_ADDRESS_MASK_39_15,  # Coffee Lake-U
+            0x9B51: throttled.MCHBAR_ADDRESS_MASK_39_15,  # Comet Lake-U 6+2
             0x9A14: throttled.MCHBAR_ADDRESS_MASK_39_17,  # Tiger Lake
             0x4601: throttled.MCHBAR_ADDRESS_MASK_42_17,  # Alder Lake
             0xA706: throttled.MCHBAR_ADDRESS_MASK_42_17,  # Raptor Lake
@@ -140,6 +144,14 @@ class PR394FixTests(unittest.TestCase):
                 self.assertEqual(throttled.MCHBAR_ADDRESS_MASKS_BY_PCI_DEVICE[device_id], layout)
 
         self.assertTrue(all(isinstance(device_id, int) for device_id in throttled.MCHBAR_ADDRESS_MASKS_BY_PCI_DEVICE))
+
+    def test_mchbar_allowlist_has_no_duplicate_device_ids(self):
+        # a repeated key in the dict literal would silently override an earlier mask
+        source = (ROOT / 'throttled.py').read_text()
+        block = source.split('MCHBAR_ADDRESS_MASKS_BY_PCI_DEVICE = {', 1)[1].split('\n}', 1)[0]
+        device_ids = re.findall(r'^\s*(0x[0-9A-Fa-f]+):', block, re.MULTILINE)
+
+        self.assertEqual(len(device_ids), len({int(device_id, 16) for device_id in device_ids}))
 
     def test_host_bridge_identity_is_read_strictly_from_sysfs(self):
         throttled = load_throttled()
